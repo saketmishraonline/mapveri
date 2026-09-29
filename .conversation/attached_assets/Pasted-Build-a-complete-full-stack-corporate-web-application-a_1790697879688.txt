@@ -1,0 +1,602 @@
+Build a complete full-stack corporate web application — an open-source alternative 
+to Google Maps. This is ONE single project with a Node.js/Express backend and a 
+React frontend. Build everything from scratch with working code for every file.
+
+═══════════════════════════════════════════════════
+PROJECT NAME: MapVeri
+═══════════════════════════════════════════════════
+
+TECH STACK:
+- Backend: Node.js, Express, PostgreSQL + PostGIS, Socket.IO, JWT, bcryptjs, pg
+- Frontend: React (Vite), React Router v6, Leaflet + react-leaflet, Axios, Socket.IO-client
+- Styling: Tailwind CSS
+- Map tiles: OpenStreetMap
+- Geocoding/Search: Nominatim public API (https://nominatim.openstreetmap.org)
+
+═══════════════════════════════════════════════════
+FOLDER STRUCTURE TO CREATE:
+═══════════════════════════════════════════════════
+
+mapveri/
+├── server/
+│   ├── config/db.js
+│   ├── controllers/
+│   │   ├── authController.js
+│   │   ├── pinController.js
+│   │   ├── verificationController.js
+│   │   └── adminController.js
+│   ├── middleware/
+│   │   ├── authMiddleware.js
+│   │   └── adminMiddleware.js
+│   ├── routes/
+│   │   ├── auth.js
+│   │   ├── pins.js
+│   │   ├── verifications.js
+│   │   └── admin.js
+│   ├── socket/nearbyPins.js
+│   ├── utils/levelPromotion.js
+│   ├── migrations/schema.sql
+│   ├── .env
+│   ├── package.json
+│   └── index.js
+│
+├── client/
+│   ├── src/
+│   │   ├── api/axios.js
+│   │   ├── context/AuthContext.jsx
+│   │   ├── components/
+│   │   │   ├── Map/MapView.jsx
+│   │   │   ├── Map/LocationTracker.jsx
+│   │   │   ├── Map/PinMarker.jsx
+│   │   │   ├── Map/SearchBar.jsx
+│   │   │   ├── Pins/CreatePinModal.jsx
+│   │   │   ├── Pins/PinDetail.jsx
+│   │   │   ├── Pins/VerifyPrompt.jsx
+│   │   │   ├── UI/Navbar.jsx
+│   │   │   ├── UI/LevelBadge.jsx
+│   │   │   ├── UI/StatusBadge.jsx
+│   │   │   ├── UI/Toast.jsx
+│   │   │   ├── UI/ConfirmDialog.jsx
+│   │   │   └── UI/StatCard.jsx
+│   │   ├── pages/
+│   │   │   ├── LoginPage.jsx
+│   │   │   ├── RegisterPage.jsx
+│   │   │   ├── MapPage.jsx
+│   │   │   ├── ProfilePage.jsx
+│   │   │   └── admin/
+│   │   │       ├── AdminLayout.jsx
+│   │   │       ├── AdminOverview.jsx
+│   │   │       ├── AdminPinQueue.jsx
+│   │   │       ├── AdminAllPins.jsx
+│   │   │       ├── AdminUsers.jsx
+│   │   │       └── AdminMapView.jsx
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js
+
+═══════════════════════════════════════════════════
+BUSINESS LOGIC — READ THIS CAREFULLY:
+═══════════════════════════════════════════════════
+
+ROLES:
+- admin: manages the application, approves/rejects pins, manages users
+- user: uses the map, creates pins, verifies pins
+
+USER LEVELS (auto-promoted, no admin action needed):
+- Level C → default on signup, verification vote = 1 point
+- Level B → achieved when pins_created >= 50 OR verifications_cast >= 100, vote = 2 points
+- Level A → achieved when pins_created >= 100 OR verifications_cast >= 250, vote = 3 points
+
+PIN VERIFICATION FLOW:
+- User creates a pin → status: "unverified", total_points: 0
+- Nearby users (within 300 meters) get prompted when they open the app
+- Each user can vote once per pin: "confirm" or "dispute"
+- On confirm: add points based on voter's level (A=3, B=2, C=1) to total_points
+- On dispute: points are NOT added (vote is recorded but doesn't help the pin)
+- When total_points >= 6 → status changes to "community_verified"
+- Admin sees community_verified pins in their queue
+- Admin clicks Approve → status: "admin_verified" (permanently pinned)
+- Admin clicks Reject → status: "rejected" (hidden from regular users)
+- Unverified pins ARE visible on the map but shown with red marker and "Unverified" badge
+
+PIN STATUS COLORS ON MAP:
+- unverified → red marker
+- community_verified → yellow marker  
+- admin_verified → green marker
+- rejected → not shown to regular users (admin sees them as grey)
+
+LEVEL PROMOTION CHECK (run after every pin creation AND every verification cast):
+  if (pins_created >= 100 || verifications_cast >= 250) level = 'A'
+  else if (pins_created >= 50 || verifications_cast >= 100) level = 'B'
+  else level = 'C'
+  Only update DB if level actually changed.
+
+═══════════════════════════════════════════════════
+BACKEND — BUILD EVERYTHING BELOW:
+═══════════════════════════════════════════════════
+
+--- server/.env ---
+PORT=5000
+DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/osmapdb
+JWT_SECRET=mapveri_super_secret_jwt_key_2024
+JWT_EXPIRES_IN=7d
+CLIENT_URL=http://localhost:5173
+
+--- server/migrations/schema.sql ---
+Write the complete SQL to run on osmapdb (PostGIS already enabled).
+
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'user',
+  level TEXT NOT NULL DEFAULT 'C',
+  pins_created INT NOT NULL DEFAULT 0,
+  verifications_cast INT NOT NULL DEFAULT 0,
+  is_banned BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE pins (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  category TEXT NOT NULL DEFAULT 'Other',
+  created_by INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  location GEOGRAPHY(Point, 4326) NOT NULL,
+  status TEXT NOT NULL DEFAULT 'unverified',
+  total_points INT NOT NULL DEFAULT 0,
+  admin_reviewed_by INT REFERENCES users(id),
+  admin_reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX pins_geo_idx ON pins USING GIST (location);
+
+CREATE TABLE verifications (
+  id SERIAL PRIMARY KEY,
+  pin_id INT NOT NULL REFERENCES pins(id) ON DELETE CASCADE,
+  user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  vote TEXT NOT NULL CHECK (vote IN ('confirm', 'dispute')),
+  points_given INT NOT NULL,
+  cast_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (pin_id, user_id)
+);
+
+--- server/config/db.js ---
+pg Pool using DATABASE_URL. Export pool. 
+Test connection on startup and log success or error.
+
+--- server/utils/levelPromotion.js ---
+Export async function checkAndPromoteUser(userId).
+Query user's current pins_created, verifications_cast, level.
+Compute new level using the rules above.
+If changed, UPDATE users SET level = newLevel WHERE id = userId.
+Return the new level.
+
+--- server/middleware/authMiddleware.js ---
+Verify JWT from Authorization header (Bearer token).
+Attach decoded user to req.user.
+If token missing or invalid return 401 { success: false, message: "Unauthorized" }.
+Check is_banned: if true return 403 { success: false, message: "Account banned" }.
+
+--- server/middleware/adminMiddleware.js ---
+After authMiddleware, check req.user.role === 'admin'.
+If not, return 403 { success: false, message: "Admin access required" }.
+
+--- server/controllers/authController.js ---
+register(req, res):
+  - Validate name, email, password (all required, email format, password min 6 chars)
+  - Check if email already exists → 409
+  - Hash password with bcryptjs (saltRounds: 10)
+  - Insert user, get back id, name, email, role, level
+  - Sign JWT with { id, name, email, role, level }
+  - Return 201 { success: true, data: { token, user } }
+
+login(req, res):
+  - Find user by email, if not found → 401
+  - Check is_banned → 403
+  - Compare password with bcryptjs
+  - Sign JWT
+  - Return 200 { success: true, data: { token, user } }
+
+getMe(req, res):
+  - Use req.user.id to fetch full user row from DB
+  - Return user object (exclude password_hash)
+
+--- server/controllers/pinController.js ---
+createPin(req, res):
+  - Auth required
+  - Body: { name, description, category, lat, lng }
+  - Validate name and lat/lng required
+  - INSERT into pins using ST_MakePoint(lng, lat)::geography
+  - Increment user pins_created: UPDATE users SET pins_created = pins_created + 1
+  - Call checkAndPromoteUser(userId)
+  - Return 201 { success: true, data: pin }
+
+getPinsInBbox(req, res):
+  - Query: ?bbox=minLng,minLat,maxLng,maxLat
+  - Parse bbox, validate 4 numbers
+  - SELECT pins with ST_Within(location, ST_MakeEnvelope(minLng,minLat,maxLng,maxLat,4326)::geography::geometry)
+  - Exclude status = 'rejected' for non-admin users
+  - JOIN users to get creator name
+  - Return array of pins with { id, name, description, category, status, 
+    total_points, lat, lng, created_by_name, created_at }
+
+getPinById(req, res):
+  - Fetch pin by id with creator name
+  - Fetch all verifications for pin with voter name and level
+  - Return pin + verifications array
+
+--- server/controllers/verificationController.js ---
+castVote(req, res):
+  - Auth required
+  - Body: { vote } must be 'confirm' or 'dispute'
+  - Check pin exists and is not admin_verified or rejected → 400
+  - Check user is not pin creator → 400 "Cannot verify your own pin"
+  - Check not already voted → 409 "Already voted on this pin"
+  - Get user's level, compute points_given (A=3, B=2, C=1)
+  - INSERT into verifications
+  - If vote === 'confirm': UPDATE pins SET total_points = total_points + points_given
+  - Check if pin total_points >= 6 AND status = 'unverified' 
+    → UPDATE pins SET status = 'community_verified'
+  - UPDATE users SET verifications_cast = verifications_cast + 1
+  - Call checkAndPromoteUser(userId)
+  - Return 200 { success: true, data: { newPoints, newStatus, newLevel } }
+
+getNearbyUnverifiedPins(userId, lat, lng, db):
+  - Export this as a reusable function (used by socket too)
+  - SELECT pins within 300m of lat/lng
+  - WHERE status = 'unverified'
+  - AND created_by != userId
+  - AND pin id NOT IN (SELECT pin_id FROM verifications WHERE user_id = userId)
+  - Return array of pins with distance
+
+--- server/controllers/adminController.js ---
+getPendingPins(req, res):
+  - GET all pins WHERE status = 'community_verified'
+  - Include creator name and verification history
+  - Return array
+
+approvePIn(req, res):
+  - PATCH pin status to 'admin_verified', set admin_reviewed_by and admin_reviewed_at
+  - Return updated pin
+
+rejectPin(req, res):
+  - PATCH pin status to 'rejected', set admin_reviewed_by and admin_reviewed_at
+  - Return updated pin
+
+getAllPins(req, res):
+  - Query param: status filter (optional), search by name (optional)
+  - Pagination: page and limit query params (default limit 10)
+  - Return pins array + total count for pagination
+
+getUsers(req, res):
+  - Query param: level filter (optional), search by name/email (optional)
+  - Return all users (exclude password_hash)
+
+updateUserLevel(req, res):
+  - Body: { level } must be A, B, or C
+  - UPDATE users SET level
+  - Return updated user
+
+toggleBan(req, res):
+  - Toggle is_banned on user
+  - Return updated user
+
+--- server/routes/ ---
+auth.js: POST /register, POST /login, GET /me (auth required)
+pins.js: GET / (bbox), POST / (auth), GET /:id, GET /nearby (auth)
+verifications.js: POST /pins/:id/verify (auth)
+admin.js: all routes need authMiddleware + adminMiddleware
+  GET /pins, PATCH /pins/:id/approve, PATCH /pins/:id/reject
+  GET /users, PATCH /users/:id/level, PATCH /users/:id/ban
+
+--- server/socket/nearbyPins.js ---
+Export function initSocket(io).
+On connection, listen for "send_location" event with { lat, lng }.
+Get userId from socket.handshake.auth.token (verify JWT).
+Call getNearbyUnverifiedPins(userId, lat, lng).
+Emit "nearby_unverified_pins" with the pins array back to that socket only.
+
+--- server/index.js ---
+Load dotenv, create Express app, attach CORS (origin: CLIENT_URL, credentials: true).
+Mount routes: /api/auth, /api/pins, /api/admin.
+Create HTTP server, attach Socket.IO.
+Call initSocket(io).
+Listen on PORT, log "Server running on port PORT".
+
+═══════════════════════════════════════════════════
+FRONTEND — BUILD EVERYTHING BELOW:
+═══════════════════════════════════════════════════
+
+--- client/src/api/axios.js ---
+Create Axios instance with baseURL http://localhost:5000/api.
+Request interceptor: read token from localStorage, add Authorization: Bearer token.
+Response interceptor: if 401, clear localStorage and redirect to /login.
+
+--- client/src/context/AuthContext.jsx ---
+Provide: user, token, isAuthenticated, isAdmin, login(token, user), logout().
+On mount: read token from localStorage, decode it, set user.
+login(): save token and user to localStorage and state.
+logout(): clear localStorage, redirect to /login.
+Wrap with createContext and export useAuth hook.
+
+--- client/src/App.jsx ---
+React Router v6 routes:
+/ → redirect to /map if authenticated else /login
+/login → LoginPage (public only)
+/register → RegisterPage (public only)
+/map → MapPage (protected, user only)
+/profile → ProfilePage (protected, user only)
+/admin → AdminLayout with nested routes (protected, admin only)
+  /admin → redirect to /admin/overview
+  /admin/overview → AdminOverview
+  /admin/queue → AdminPinQueue
+  /admin/pins → AdminAllPins
+  /admin/users → AdminUsers
+  /admin/map → AdminMapView
+Create ProtectedRoute component: if not authenticated redirect to /login.
+Create AdminRoute component: if not admin redirect to /map.
+
+--- client/src/pages/LoginPage.jsx ---
+Clean centered card form with MapVeri logo/title at top.
+Fields: Email, Password with show/hide toggle.
+"Login" button with loading spinner state.
+Link to /register.
+On submit: POST /api/auth/login, call context login(), redirect based on role.
+Show inline error message on failure.
+
+--- client/src/pages/RegisterPage.jsx ---
+Same clean style.
+Fields: Full Name, Email, Password, Confirm Password.
+Validate passwords match before submitting.
+On success redirect to /login with success message.
+
+--- client/src/pages/MapPage.jsx ---
+This is the MAIN page. Full-screen layout (100vh, no scroll).
+Top: Navbar component.
+Below navbar: full-screen MapView component.
+On mount:
+  1. Connect Socket.IO with auth token
+  2. Get user location with navigator.geolocation.getCurrentPosition
+  3. Emit "send_location" to socket with { lat, lng }
+  4. Listen for "nearby_unverified_pins" — store in state
+  5. Fetch pins in current viewport with GET /api/pins?bbox=...
+When "nearby_unverified_pins" received and array is not empty:
+  Show VerifyPrompt modal.
+
+--- client/src/components/Map/MapView.jsx ---
+Use MapContainer from react-leaflet.
+TileLayer: https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
+  attribution: © OpenStreetMap contributors
+Include SearchBar component positioned top-left over the map.
+Include LocationTracker component (renders GPS dot).
+Render PinMarker for each pin in pins array.
+On map click (right-click or long-press 500ms): open CreatePinModal 
+  with the clicked lat/lng pre-filled.
+Show "+ Add Pin" button bottom-right of map.
+Manage state: pins array, selectedPin, showCreateModal, createCoords.
+When map moves (on moveend): refetch pins using map.getBounds() for bbox.
+
+--- client/src/components/Map/SearchBar.jsx ---
+Floating search box at top of map (position: absolute, z-index 1000).
+Input with search icon.
+On input change (debounce 400ms): call Nominatim 
+  https://nominatim.openstreetmap.org/search?q=QUERY&format=json&limit=5
+  with header User-Agent: MapVeri/1.0
+Show dropdown of results with display_name.
+On click: fly map to result's lat/lon with zoom 15, close dropdown.
+Handle empty results: show "No results found".
+
+--- client/src/components/Map/LocationTracker.jsx ---
+Use useMap() hook.
+watchPosition for live GPS tracking.
+Render: blue circle marker at user position (custom CSS animated pulse).
+Render: semi-transparent accuracy circle using L.circle.
+On position update: update marker, optionally pan map if user moved far.
+On error: show small toast "Location access denied".
+
+--- client/src/components/Map/PinMarker.jsx ---
+Props: pin object.
+Render CircleMarker with color based on status:
+  unverified → #ef4444 (red)
+  community_verified → #f59e0b (yellow)
+  admin_verified → #22c55e (green)
+On click: call onPinSelect(pin) to open PinDetail sidebar.
+Show tooltip with pin name on hover.
+
+--- client/src/components/Pins/PinDetail.jsx ---
+Right sidebar that slides in (fixed position, right: 0, full height).
+Shows:
+  - Pin name (large)
+  - StatusBadge component
+  - Category tag
+  - Description
+  - Created by: name + their level badge
+  - Created at: formatted date
+  - Verification progress: "X / 6 points" with a progress bar
+  - List of verifications: voter name, level badge, vote (✅/❌), points given, date
+  - If pin is unverified and user hasn't voted and user is not creator:
+    Show [✅ Confirm] [❌ Dispute] buttons inline
+    On click: call POST /api/pins/:id/verify, refresh pin data
+Close button (X) top right.
+
+--- client/src/components/Pins/CreatePinModal.jsx ---
+Modal overlay.
+Title: "Pin a Location"
+Show coordinates: Lat: X.XXXX, Lng: X.XXXX (read-only)
+Fields:
+  - Name (required, max 100 chars)
+  - Description (textarea, optional)
+  - Category (select: Restaurant, Shop, Landmark, Road Issue, Hazard, Other)
+[Create Pin] button (loading state) and [Cancel].
+On submit: POST /api/pins with { name, description, category, lat, lng }.
+On success: close modal, add pin to map, show toast "Pin created successfully!".
+On error: show error message inside modal.
+
+--- client/src/components/Pins/VerifyPrompt.jsx ---
+Bottom sheet modal (slides up from bottom).
+Header: "📍 Verify Nearby Locations" with count badge "X pins nearby".
+Shows one pin at a time:
+  - Pin name and category
+  - Distance: "~150m away"
+  - Description if available
+  - "Your vote counts as X point(s)" (based on user level)
+  - Progress: current points / 6 with progress bar
+Buttons: [✅ Confirm — It's here!] [❌ Dispute — Wrong location] [Skip →]
+On Confirm/Dispute: call POST /api/pins/:id/verify, advance to next pin.
+On Skip: advance to next pin without API call.
+After all pins processed: close with message "All caught up! Thanks for verifying."
+Show user's level badge and contribution in the header.
+
+--- client/src/pages/ProfilePage.jsx ---
+Clean profile page layout.
+Top section: Avatar (initials-based circle), Name, Email, Level badge (large).
+Stats row: Pins Created | Verifications Cast | Member Since
+Level progress section:
+  If Level C: show progress to Level B
+    "Pins: X / 50" and "Verifications: X / 100" 
+    "Reach either threshold to level up!"
+    Progress bar for whichever is closer
+  If Level B: show progress to Level A
+    "Pins: X / 100" and "Verifications: X / 250"
+  If Level A: show "Maximum Level Reached 🏆"
+Recent Pins section: last 5 pins created by user in a list.
+
+--- client/src/components/UI/Navbar.jsx ---
+Fixed top bar, full width, dark navy background (#1e293b), white text.
+Left: "📍 MapVeri" logo/brand.
+Center: nav links (Map, Profile) — highlight active route.
+Right: Level badge + user name + Logout button.
+On logout: call context logout().
+
+--- client/src/components/UI/LevelBadge.jsx ---
+Props: level ('A' | 'B' | 'C')
+Level A → gold background, "⭐ Level A"
+Level B → silver background, "🥈 Level B"
+Level C → bronze background, "🥉 Level C"
+Small rounded pill shape.
+
+--- client/src/components/UI/StatusBadge.jsx ---
+Props: status string
+unverified → red pill "🔴 Unverified"
+community_verified → yellow pill "🟡 Pending Admin"
+admin_verified → green pill "🟢 Verified"
+rejected → grey pill "⚫ Rejected"
+
+--- client/src/components/UI/Toast.jsx ---
+Fixed top-right toast notification system.
+Support: success (green), error (red), info (blue).
+Auto-dismiss after 3 seconds with slide-out animation.
+Export useToast hook: { showToast(message, type) }.
+
+--- client/src/components/UI/StatCard.jsx ---
+Props: icon, label, value, color
+Renders a card with large number, label below, colored left border.
+
+═══════════════════════════════════════════════════
+ADMIN DASHBOARD — BUILD EVERYTHING BELOW:
+═══════════════════════════════════════════════════
+
+--- client/src/pages/admin/AdminLayout.jsx ---
+Two-column layout: fixed left sidebar (250px) + main content area.
+Sidebar: dark navy (#1e293b), white text.
+  Logo: "📍 MapVeri Admin" at top.
+  Nav links with icons:
+    📊 Overview → /admin/overview
+    ⏳ Pin Queue → /admin/queue (show pending count badge)
+    📌 All Pins → /admin/pins
+    👥 Users → /admin/users
+    🗺️ Map View → /admin/map
+  Bottom: admin name + Logout button.
+Main: renders <Outlet /> with padding.
+Top bar: page title + current time.
+
+--- client/src/pages/admin/AdminOverview.jsx ---
+On mount: fetch stats from GET /api/admin/stats (create this endpoint that returns 
+all counts in one query).
+Stat cards row:
+  Total Pins | Admin Verified | Pending Review | Rejected | Total Users
+Second row:
+  Level A Users | Level B Users | Level C Users
+Recent Activity section: list of last 10 pins created (name, creator, status, time ago).
+All with loading skeleton while fetching.
+
+--- client/src/pages/admin/AdminPinQueue.jsx ---
+Fetch GET /api/admin/pins?status=community_verified on mount.
+Page title: "Pin Approval Queue" with count.
+If empty: show "✅ All caught up! No pins pending review." centered message.
+Table columns: Pin Name | Category | Created By | Level | Points | Created At | Actions
+Each row is expandable — clicking the row toggles an expanded panel below it:
+  Left side: small Leaflet map (300px height) showing exact pin location
+  Right side:
+    Description
+    Verification history table: Voter | Level | Vote | Points | Date
+    [✅ Approve] and [❌ Reject] buttons
+On approve/reject: PATCH to API, remove row from list with fade-out animation, 
+  show toast "Pin approved/rejected successfully".
+Loading skeleton for table rows.
+
+--- client/src/pages/admin/AdminAllPins.jsx ---
+Filter bar: Status dropdown (All/Unverified/Community Verified/Admin Verified/Rejected)
+  + Search input (search by pin name).
+Table: Name | Category | Status badge | Created By | Points | Date | Actions
+Actions column: force [Approve] or [Reject] button depending on current status.
+Pagination: show 10 per page, prev/next buttons, "Page X of Y".
+Empty state if no results matching filter.
+
+--- client/src/pages/admin/AdminUsers.jsx ---
+Filter bar: Level filter (All/A/B/C) + Search by name or email.
+Table: Name | Email | Level badge | Pins Created | Verifications | Joined | Status | Actions
+Actions: [Promote Level] [Demote Level] [Ban/Unban]
+Promote increases level by one step (C→B, B→A, A stays).
+Demote decreases (A→B, B→C, C stays).
+Ban/Unban toggles is_banned with confirmation dialog.
+Show banned users with red row highlight and "Banned" badge.
+
+--- client/src/pages/admin/AdminMapView.jsx ---
+Full-screen Leaflet map (like MapPage but admin version).
+Layer control checkboxes floating on map:
+  ☑ Show Unverified (red)
+  ☑ Show Community Verified (yellow)
+  ☑ Show Admin Verified (green)
+  ☑ Show Rejected (grey) ← admin only
+Each filter toggles visibility of those pin markers.
+Clicking any pin opens an admin popup with:
+  Name, status, points, created by
+  [Approve] [Reject] buttons
+  Links to view full detail.
+
+═══════════════════════════════════════════════════
+FINAL REQUIREMENTS:
+═══════════════════════════════════════════════════
+
+1. Every API call must have loading state (button disabled + spinner while loading).
+2. All errors from API must be caught and shown to user — never silent failures.
+3. JWT token must be sent on every protected request.
+4. If token expires or is invalid, auto-redirect to /login and clear localStorage.
+5. The map must always show OpenStreetMap attribution (Leaflet does this by default).
+6. Nominatim usage: always send User-Agent header "MapVeri/1.0" as required by their policy.
+7. The app must work on both desktop and mobile screen sizes (responsive).
+8. Admin users who try to access /map should be redirected to /admin.
+9. Regular users who try to access /admin should be redirected to /map.
+10. Banned users get 403 on login with message "Your account has been banned".
+11. Users cannot verify their own pins — return clear error message.
+12. Users cannot vote twice on same pin — return clear error message.
+13. Pin creator's name should show on every pin detail view.
+14. All timestamps should display as human-readable "2 hours ago" format.
+15. Write package.json for both server and client with all required dependencies listed.
+16. Write a root-level README.md with step-by-step setup instructions:
+    - Clone repo
+    - Setup PostgreSQL and run schema.sql
+    - Configure .env
+    - npm install in both server/ and client/
+    - npm run dev for both
+    - Default admin account creation SQL command
+
+Build all files completely with no placeholders. Every function must be fully 
+implemented. Do not write "// TODO" or "// implement this". 
+This should be a working application when the code is run.

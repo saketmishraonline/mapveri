@@ -1,22 +1,23 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: MapVeri community map API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: auth
+  - name: pins
+  - name: verification
+  - name: admin
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +25,491 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: Registered user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Logged in session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [auth]
+      responses:
+        "200":
+          description: Current profile and recent pins
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+  /pins:
+    get:
+      operationId: listPins
+      tags: [pins]
+      parameters:
+        - in: query
+          name: bbox
+          schema:
+            type: string
+          description: Map bounds as minLng,minLat,maxLng,maxLat
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [all, unverified, community_verified, admin_verified, rejected]
+      responses:
+        "200":
+          description: Pins
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pin"
+    post:
+      operationId: createPin
+      tags: [pins]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PinInput"
+      responses:
+        "201":
+          description: Created pin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pin"
+        "400":
+          description: Invalid pin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /pins/nearby:
+    get:
+      operationId: listNearbyPins
+      tags: [pins]
+      parameters:
+        - in: query
+          name: lat
+          required: true
+          schema:
+            type: number
+        - in: query
+          name: lng
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Nearby pins needing verification
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NearbyPin"
+  /pins/{id}:
+    get:
+      operationId: getPin
+      tags: [pins]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Pin details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PinDetail"
+        "404":
+          description: Pin not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /pins/{id}/verify:
+    post:
+      operationId: verifyPin
+      tags: [verification]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoteInput"
+      responses:
+        "200":
+          description: Recorded vote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationResult"
+        "400":
+          description: Vote rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Already voted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/stats:
+    get:
+      operationId: getAdminStats
+      tags: [admin]
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+  /admin/pins:
+    get:
+      operationId: getAdminPins
+      tags: [admin]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Admin pins
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedPins"
+  /admin/pins/{id}/approve:
+    patch:
+      operationId: approvePin
+      tags: [admin]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Approved pin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pin"
+  /admin/pins/{id}/reject:
+    patch:
+      operationId: rejectPin
+      tags: [admin]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Rejected pin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pin"
+  /admin/users:
+    get:
+      operationId: getAdminUsers
+      tags: [admin]
+      parameters:
+        - in: query
+          name: level
+          schema:
+            type: string
+            enum: [A, B, C, all]
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+  /admin/users/{id}/level:
+    patch:
+      operationId: updateUserLevel
+      tags: [admin]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LevelInput"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /admin/users/{id}/ban:
+    patch:
+      operationId: toggleUserBan
+      tags: [admin]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
 components:
   schemas:
     HealthStatus:
       type: object
       properties:
-        status:
+        status: { type: string }
+      required: [status]
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+      required: [error]
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        role: { type: string, enum: [user, admin] }
+        level: { type: string, enum: [A, B, C] }
+        pinsCreated: { type: integer }
+        verificationsCast: { type: integer }
+        isBanned: { type: boolean }
+        createdAt: { type: string, format: date-time }
+      required: [id, name, email, role, level, pinsCreated, verificationsCast, isBanned, createdAt]
+    AuthSession:
+      type: object
+      properties:
+        token: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+      required: [token, user]
+    RegisterInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 2 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 6 }
+      required: [name, email, password]
+    LoginInput:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 6 }
+      required: [email, password]
+    PinInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100 }
+        description: { type: string }
+        category:
           type: string
-      required:
-        - status
-
+          enum: [Restaurant, Shop, Landmark, "Road Issue", Hazard, Other]
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+      required: [name, category, lat, lng]
+    Pin:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        lat: { type: number }
+        lng: { type: number }
+        status: { type: string, enum: [unverified, community_verified, admin_verified, rejected] }
+        totalPoints: { type: integer }
+        createdByName: { type: string }
+        createdByLevel: { type: string, enum: [A, B, C] }
+        createdById: { type: integer }
+        createdAt: { type: string, format: date-time }
+      required: [id, name, description, category, lat, lng, status, totalPoints, createdByName, createdByLevel, createdById, createdAt]
+    Verification:
+      type: object
+      properties:
+        id: { type: integer }
+        voterName: { type: string }
+        voterLevel: { type: string, enum: [A, B, C] }
+        vote: { type: string, enum: [confirm, dispute] }
+        pointsGiven: { type: integer }
+        castAt: { type: string, format: date-time }
+      required: [id, voterName, voterLevel, vote, pointsGiven, castAt]
+    PinDetail:
+      allOf:
+        - $ref: "#/components/schemas/Pin"
+        - type: object
+          properties:
+            verifications:
+              type: array
+              items: { $ref: "#/components/schemas/Verification" }
+          required: [verifications]
+    NearbyPin:
+      allOf:
+        - $ref: "#/components/schemas/Pin"
+        - type: object
+          properties:
+            distanceMeters: { type: number }
+          required: [distanceMeters]
+    VoteInput:
+      type: object
+      properties:
+        vote: { type: string, enum: [confirm, dispute] }
+      required: [vote]
+    VerificationResult:
+      type: object
+      properties:
+        newPoints: { type: integer }
+        newStatus: { type: string, enum: [unverified, community_verified, admin_verified, rejected] }
+        newLevel: { type: string, enum: [A, B, C] }
+      required: [newPoints, newStatus, newLevel]
+    Profile:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        recentPins:
+          type: array
+          items: { $ref: "#/components/schemas/Pin" }
+      required: [user, recentPins]
+    AdminStats:
+      type: object
+      properties:
+        totalPins: { type: integer }
+        adminVerified: { type: integer }
+        pendingReview: { type: integer }
+        rejected: { type: integer }
+        totalUsers: { type: integer }
+        levelA: { type: integer }
+        levelB: { type: integer }
+        levelC: { type: integer }
+        recentPins:
+          type: array
+          items: { $ref: "#/components/schemas/Pin" }
+      required: [totalPins, adminVerified, pendingReview, rejected, totalUsers, levelA, levelB, levelC, recentPins]
+    PaginatedPins:
+      type: object
+      properties:
+        pins:
+          type: array
+          items: { $ref: "#/components/schemas/Pin" }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+      required: [pins, total, page, limit]
+    LevelInput:
+      type: object
+      properties:
+        level: { type: string, enum: [A, B, C] }
+      required: [level]

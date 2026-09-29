@@ -1,6 +1,6 @@
-# [Project name]
+# MapVeri
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+MapVeri is a community-powered open map where people add, verify, and maintain local places together.
 
 ## Run & Operate
 
@@ -22,23 +22,35 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/mapveri` — React/Vite app with auth, map workspace, profile, and admin console
+- `artifacts/api-server` — Express API routes and JWT-backed MapVeri behavior
+- `lib/api-spec/openapi.yaml` — source of truth for API contracts
+- `lib/db/src/schema` — Drizzle schema for users, pins, and verifications
+- `lib/api-client-react/src/generated` — generated React Query client
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The frontend uses the generated OpenAPI client so request and response shapes stay aligned with the API.
+- Map coordinates are stored as fixed-precision numeric latitude/longitude values and proximity is calculated with the Haversine formula.
+- JWTs are kept in local storage for the browser client and attached through the generated fetch client's token getter.
+- An empty development database is seeded with one admin, one contributor, and four pins for a useful first run.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Browse and search community pins with status and trust signals.
+- Add a place, inspect its history, and confirm or dispute it.
+- Track contributor levels and recent pins on a profile page.
+- Review pins, manage users, and inspect map status layers in the admin console.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- No additional user preferences have been provided.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Run API codegen after changing `lib/api-spec/openapi.yaml`.
+- Use the shared artifact workflows instead of starting Vite or the API with a root-level command.
+- The admin demo credentials are development-only and should be replaced before any public launch.
 
 ## Pointers
 

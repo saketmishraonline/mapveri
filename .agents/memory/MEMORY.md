@@ -1,0 +1,2 @@
+- [Generated client auth](generated-client-auth.md) — Browser JWT sessions must register a token getter with the generated fetch client.
+- [MapVeri coordinate storage](mapveri-coordinates.md) — Keep map coordinates as fixed-precision numeric lat/lng and calculate proximity server-side when PostGIS is unavailable.

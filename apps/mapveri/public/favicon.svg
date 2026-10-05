@@ -1,0 +1,42 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1c3346"/>
+      <stop offset="100%" stop-color="#10202d"/>
+    </linearGradient>
+    <linearGradient id="pinGrad" x1="160" y1="110" x2="352" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#347d70"/>
+      <stop offset="100%" stop-color="#1f544b"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="180" y1="120" x2="332" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f5d469"/>
+      <stop offset="100%" stop-color="#d99f18"/>
+    </linearGradient>
+    <filter id="shadow" x="120" y="80" width="272" height="340" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Background Squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle Map Grid lines -->
+  <path d="M 64 256 L 448 256 M 256 64 L 256 448" stroke="#ffffff" stroke-opacity="0.06" stroke-width="6"/>
+  <circle cx="256" cy="256" r="180" stroke="#f5d469" stroke-opacity="0.12" stroke-width="4" stroke-dasharray="8 8"/>
+  <circle cx="256" cy="256" r="120" stroke="#347d70" stroke-opacity="0.18" stroke-width="3"/>
+
+  <!-- Compass / Crosshair Accents -->
+  <path d="M 256 36 L 256 56 M 256 456 L 256 476 M 36 256 L 56 256 M 456 256 L 476 256" stroke="#f5d469" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Main Teardrop Map Pin with shadow -->
+  <g filter="url(#shadow)">
+    <path d="M 256 100 C 188 100 134 154 134 222 C 134 300 236 394 251 407 C 254 410 258 410 261 407 C 276 394 378 300 378 222 C 378 154 324 100 256 100 Z" fill="url(#pinGrad)"/>
+    <!-- Outer gold accent stroke -->
+    <path d="M 256 100 C 188 100 134 154 134 222 C 134 300 236 394 251 407 C 254 410 258 410 261 407 C 276 394 378 300 378 222 C 378 154 324 100 256 100 Z" stroke="url(#accentGrad)" stroke-width="10"/>
+    
+    <!-- Pin Center Core with Location/Checkmark -->
+    <circle cx="256" cy="216" r="46" fill="#f8f5ea"/>
+    <circle cx="256" cy="216" r="30" fill="url(#accentGrad)"/>
+    <circle cx="256" cy="216" r="14" fill="#172a3a"/>
+  </g>
+</svg>

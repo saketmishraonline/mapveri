@@ -11,11 +11,19 @@ import type { UserRole } from './userRole';
 export interface User {
   id: number;
   name: string;
+  username?: string | null;
   email: string;
   role: UserRole;
   level: UserLevel;
+  source?: string;
   pinsCreated: number;
   verificationsCast: number;
   isBanned: boolean;
   createdAt: Date;
+  authProvider?: string;
+  providerId?: string | null;
+  avatarUrl?: string | null;
+  isEmailVerified?: boolean;
+  oauthData?: string | null;
+  needsUsername?: boolean | null;
 }

@@ -18,12 +18,16 @@ export const HealthCheckResponse = zod.object({
 
 export const registerBodyNameMin = 2;
 
+export const registerBodyUsernameMin = 3;
+export const registerBodyUsernameMax = 20;
+
 export const registerBodyPasswordMin = 6;
 
 
 
 export const RegisterBody = zod.object({
   "name": zod.string().min(registerBodyNameMin),
+  "username": zod.string().min(registerBodyUsernameMin).max(registerBodyUsernameMax),
   "email": zod.string().email(),
   "password": zod.string().min(registerBodyPasswordMin)
 })
@@ -33,13 +37,21 @@ export const RegisterResponse = zod.object({
   "user": zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish(),
   "email": zod.string(),
   "role": zod.enum(['user', 'admin']),
   "level": zod.enum(['A', 'B', 'C']),
+  "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
   "verificationsCast": zod.number().int(),
   "isBanned": zod.boolean(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "authProvider": zod.string().optional(),
+  "providerId": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "isEmailVerified": zod.boolean().optional(),
+  "oauthData": zod.string().nullish(),
+  "needsUsername": zod.boolean().nullish()
 })
 })
 
@@ -49,7 +61,7 @@ export const loginBodyPasswordMin = 6;
 
 
 export const LoginBody = zod.object({
-  "email": zod.string().email(),
+  "email": zod.string().min(1),
   "password": zod.string().min(loginBodyPasswordMin)
 })
 
@@ -58,13 +70,21 @@ export const LoginResponse = zod.object({
   "user": zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish(),
   "email": zod.string(),
   "role": zod.enum(['user', 'admin']),
   "level": zod.enum(['A', 'B', 'C']),
+  "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
   "verificationsCast": zod.number().int(),
   "isBanned": zod.boolean(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "authProvider": zod.string().optional(),
+  "providerId": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "isEmailVerified": zod.boolean().optional(),
+  "oauthData": zod.string().nullish(),
+  "needsUsername": zod.boolean().nullish()
 })
 })
 
@@ -72,13 +92,21 @@ export const LoginResponse = zod.object({
 export const GetMeResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish(),
   "email": zod.string(),
   "role": zod.enum(['user', 'admin']),
   "level": zod.enum(['A', 'B', 'C']),
+  "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
   "verificationsCast": zod.number().int(),
   "isBanned": zod.boolean(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "authProvider": zod.string().optional(),
+  "providerId": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "isEmailVerified": zod.boolean().optional(),
+  "oauthData": zod.string().nullish(),
+  "needsUsername": zod.boolean().nullish()
 })
 
 
@@ -86,13 +114,21 @@ export const GetProfileResponse = zod.object({
   "user": zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish(),
   "email": zod.string(),
   "role": zod.enum(['user', 'admin']),
   "level": zod.enum(['A', 'B', 'C']),
+  "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
   "verificationsCast": zod.number().int(),
   "isBanned": zod.boolean(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "authProvider": zod.string().optional(),
+  "providerId": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "isEmailVerified": zod.boolean().optional(),
+  "oauthData": zod.string().nullish(),
+  "needsUsername": zod.boolean().nullish()
 }),
   "recentPins": zod.array(zod.object({
   "id": zod.number().int(),
@@ -341,13 +377,21 @@ export const GetAdminUsersQueryParams = zod.object({
 export const GetAdminUsersResponseItem = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish(),
   "email": zod.string(),
   "role": zod.enum(['user', 'admin']),
   "level": zod.enum(['A', 'B', 'C']),
+  "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
   "verificationsCast": zod.number().int(),
   "isBanned": zod.boolean(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "authProvider": zod.string().optional(),
+  "providerId": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "isEmailVerified": zod.boolean().optional(),
+  "oauthData": zod.string().nullish(),
+  "needsUsername": zod.boolean().nullish()
 })
 export const GetAdminUsersResponse = zod.array(GetAdminUsersResponseItem)
 
@@ -363,13 +407,21 @@ export const UpdateUserLevelBody = zod.object({
 export const UpdateUserLevelResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish(),
   "email": zod.string(),
   "role": zod.enum(['user', 'admin']),
   "level": zod.enum(['A', 'B', 'C']),
+  "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
   "verificationsCast": zod.number().int(),
   "isBanned": zod.boolean(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "authProvider": zod.string().optional(),
+  "providerId": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "isEmailVerified": zod.boolean().optional(),
+  "oauthData": zod.string().nullish(),
+  "needsUsername": zod.boolean().nullish()
 })
 
 
@@ -380,13 +432,21 @@ export const ToggleUserBanParams = zod.object({
 export const ToggleUserBanResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
+  "username": zod.string().nullish(),
   "email": zod.string(),
   "role": zod.enum(['user', 'admin']),
   "level": zod.enum(['A', 'B', 'C']),
+  "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
   "verificationsCast": zod.number().int(),
   "isBanned": zod.boolean(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "authProvider": zod.string().optional(),
+  "providerId": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "isEmailVerified": zod.boolean().optional(),
+  "oauthData": zod.string().nullish(),
+  "needsUsername": zod.boolean().nullish()
 })
 
 

@@ -34,13 +34,21 @@ export const UserLevel = {
 export interface User {
   id: number;
   name: string;
+  username?: string | null;
   email: string;
   role: UserRole;
   level: UserLevel;
+  source?: string;
   pinsCreated: number;
   verificationsCast: number;
   isBanned: boolean;
   createdAt: string;
+  authProvider?: string;
+  providerId?: string | null;
+  avatarUrl?: string | null;
+  isEmailVerified?: boolean;
+  oauthData?: string | null;
+  needsUsername?: boolean | null;
 }
 
 export interface AuthSession {
@@ -51,6 +59,11 @@ export interface AuthSession {
 export interface RegisterInput {
   /** @minLength 2 */
   name: string;
+  /**
+     * @minLength 3
+     * @maxLength 20
+     */
+  username: string;
   email: string;
   /** @minLength 6 */
   password: string;

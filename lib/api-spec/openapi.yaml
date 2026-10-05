@@ -383,13 +383,21 @@ components:
       properties:
         id: { type: integer }
         name: { type: string }
+        username: { type: string, nullable: true }
         email: { type: string }
         role: { type: string, enum: [user, admin] }
         level: { type: string, enum: [A, B, C] }
+        source: { type: string }
         pinsCreated: { type: integer }
         verificationsCast: { type: integer }
         isBanned: { type: boolean }
         createdAt: { type: string, format: date-time }
+        authProvider: { type: string }
+        providerId: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        isEmailVerified: { type: boolean }
+        oauthData: { type: string, nullable: true }
+        needsUsername: { type: boolean, nullable: true }
       required: [id, name, email, role, level, pinsCreated, verificationsCast, isBanned, createdAt]
     AuthSession:
       type: object
@@ -401,9 +409,10 @@ components:
       type: object
       properties:
         name: { type: string, minLength: 2 }
+        username: { type: string, minLength: 3, maxLength: 20 }
         email: { type: string, format: email }
         password: { type: string, minLength: 6 }
-      required: [name, email, password]
+      required: [name, username, email, password]
     LoginInput:
       type: object
       properties:

@@ -116,7 +116,7 @@ export function publicUser(user: any) {
 
 export function mapPin(row: {
   pin: typeof pinsTable.$inferSelect;
-  creator: Pick<MapUser, "id" | "name" | "level">;
+  creator?: Partial<Pick<MapUser, "id" | "name" | "level">> | null;
 }) {
   return {
     id: row.pin.id,
@@ -127,9 +127,9 @@ export function mapPin(row: {
     lng: Number(row.pin.lng),
     status: row.pin.status as "unverified" | "community_verified" | "admin_verified" | "rejected",
     totalPoints: row.pin.totalPoints,
-    createdByName: row.creator.name,
-    createdByLevel: row.creator.level as "A" | "B" | "C",
-    createdById: row.creator.id,
+    createdByName: row.creator?.name ?? "Unknown",
+    createdByLevel: (row.creator?.level ?? "C") as "A" | "B" | "C",
+    createdById: row.creator?.id ?? row.pin.createdById,
     createdAt: row.pin.createdAt,
   };
 }
@@ -141,7 +141,7 @@ export async function fetchPins(status?: string, search?: string) {
   const rows = await db
     .select({ pin: pinsTable, creator: { id: usersTable.id, name: usersTable.name, level: usersTable.level } })
     .from(pinsTable)
-    .innerJoin(usersTable, eq(pinsTable.createdById, usersTable.id))
+    .leftJoin(usersTable, eq(pinsTable.createdById, usersTable.id))
     .where(filters.length ? and(...filters) : undefined)
     .orderBy(desc(pinsTable.createdAt));
   return rows.map(mapPin);

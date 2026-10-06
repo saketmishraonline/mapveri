@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import {
   GetAdminStatsResponse,
+  GetAdminPinsResponse,
   ApprovePinParams,
   CreatePinBody,
   GetAdminPinsQueryParams,
@@ -432,8 +433,18 @@ router.get("/admin/pins", async (req, res): Promise<void> => {
   const admin = await requireAdmin(req, res);
   if (!admin) return;
   const parsed = GetAdminPinsQueryParams.parse(req.query);
-  const pins = await fetchPins(parsed.status, parsed.search);
-  res.json(pins);
+  const page = Math.max(1, Number(parsed.page) || 1);
+  const limit = Math.max(1, Number(parsed.limit) || 10);
+  const allPins = await fetchPins(parsed.status, parsed.search);
+  const total = allPins.length;
+  const startIndex = (page - 1) * limit;
+  const pins = allPins.slice(startIndex, startIndex + limit);
+  res.json(GetAdminPinsResponse.parse({
+    pins,
+    total,
+    page,
+    limit,
+  }));
 });
 
 async function reviewPin(req: any, res: any, status: "admin_verified" | "rejected") {
@@ -457,7 +468,7 @@ async function reviewPin(req: any, res: any, status: "admin_verified" | "rejecte
     adminReviewedAt: new Date(),
   }).where(eq(pinsTable.id, params.data.id)).returning();
   await promoteUser(pin.createdById);
-  const [row] = await db.select({ pin: pinsTable, creator: { id: usersTable.id, name: usersTable.name, level: usersTable.level } }).from(pinsTable).innerJoin(usersTable, eq(pinsTable.createdById, usersTable.id)).where(eq(pinsTable.id, pin.id)).limit(1);
+  const [row] = await db.select({ pin: pinsTable, creator: { id: usersTable.id, name: usersTable.name, level: usersTable.level } }).from(pinsTable).leftJoin(usersTable, eq(pinsTable.createdById, usersTable.id)).where(eq(pinsTable.id, pin.id)).limit(1);
   res.json(mapPin(row));
 }
 

@@ -162,18 +162,18 @@ export function SetUsernameModal({ user }: SetUsernameModalProps) {
               </div>
             </label>
 
-            {/* Bloom Filter Live Indicator */}
+            {/* Live Indicator */}
             <div className="mt-2 min-h-[20px] text-xs">
               {status.checking && (
                 <span className="text-[#8eaaa2] flex items-center gap-1.5 text-[11px]">
                   <Loader2 size={12} className="animate-spin text-[#f1c744]" />
-                  Checking Bloom filter reservation list...
+                  Checking availability...
                 </span>
               )}
               {!status.checking && status.available === true && (
                 <span className="text-[#4ade80] flex items-center gap-1.5 text-[11px] font-semibold">
                   <ShieldCheck size={13} />
-                  @{username} is available (Bloom filter verified)
+                  @{username} is available
                 </span>
               )}
               {!status.checking && status.available === false && (
@@ -205,11 +205,11 @@ export function SetUsernameModal({ user }: SetUsernameModalProps) {
             {isSubmitting ? (
               <>
                 <Loader2 size={16} className="animate-spin" />
-                Claiming handle…
+                Logging in…
               </>
             ) : (
               <>
-                Claim @{username || 'handle'} & Enter Map <ArrowRight size={16} />
+                Login <ArrowRight size={16} />
               </>
             )}
           </button>

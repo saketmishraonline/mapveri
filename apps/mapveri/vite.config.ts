@@ -9,37 +9,42 @@ const rawPort = process.env.PORT || '5173';
 const port = Number(rawPort);
 const basePath = process.env.BASE_PATH || '/';
 
-const certDir = path.resolve(import.meta.dirname, '.cert');
-const keyPath = path.join(certDir, 'key.pem');
-const certPath = path.join(certDir, 'cert.pem');
-const cnfPath = path.join(certDir, 'openssl.cnf');
+// HTTPS is disabled by default so browsers connect over standard http://localhost without self-signed cert security warnings.
+// Set USE_HTTPS=true in environment if custom local SSL testing is explicitly needed.
+const useHttps = process.env.USE_HTTPS === 'true';
+let httpsConfig: { key: Buffer; cert: Buffer } | undefined = undefined;
 
-// Auto-generate SSL certificate if not present
-if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
-  try {
-    fs.mkdirSync(certDir, { recursive: true });
-    if (!fs.existsSync(cnfPath)) {
-      fs.writeFileSync(
-        cnfPath,
-        `[req]\ndistinguished_name = req_distinguished_name\nx509_extensions = v3_req\nprompt = no\n\n[req_distinguished_name]\nCN = localhost\n\n[v3_req]\nkeyUsage = critical, digitalSignature, keyEncipherment\nextendedKeyUsage = serverAuth\nsubjectAltName = @alt_names\n\n[alt_names]\nDNS.1 = localhost\nDNS.2 = *.localhost\nIP.1 = 127.0.0.1\nIP.2 = 0.0.0.0\nIP.3 = 192.168.115.178\n`
+if (useHttps) {
+  const certDir = path.resolve(import.meta.dirname, '.cert');
+  const keyPath = path.join(certDir, 'key.pem');
+  const certPath = path.join(certDir, 'cert.pem');
+  const cnfPath = path.join(certDir, 'openssl.cnf');
+
+  if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
+    try {
+      fs.mkdirSync(certDir, { recursive: true });
+      if (!fs.existsSync(cnfPath)) {
+        fs.writeFileSync(
+          cnfPath,
+          `[req]\ndistinguished_name = req_distinguished_name\nx509_extensions = v3_req\nprompt = no\n\n[req_distinguished_name]\nCN = localhost\n\n[v3_req]\nkeyUsage = critical, digitalSignature, keyEncipherment\nextendedKeyUsage = serverAuth\nsubjectAltName = @alt_names\n\n[alt_names]\nDNS.1 = localhost\nDNS.2 = *.localhost\nIP.1 = 127.0.0.1\nIP.2 = 0.0.0.0\nIP.3 = 192.168.115.178\n`
+        );
+      }
+      execSync(
+        `openssl req -x509 -newkey rsa:2048 -nodes -sha256 -keyout "${keyPath}" -out "${certPath}" -days 365 -config "${cnfPath}"`,
+        { stdio: 'ignore' }
       );
+    } catch (e) {
+      console.warn('Could not auto-generate SSL cert:', e);
     }
-    execSync(
-      `openssl req -x509 -newkey rsa:2048 -nodes -sha256 -keyout "${keyPath}" -out "${certPath}" -days 365 -config "${cnfPath}"`,
-      { stdio: 'ignore' }
-    );
-  } catch (e) {
-    console.warn('Could not auto-generate SSL cert:', e);
+  }
+
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    httpsConfig = {
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath),
+    };
   }
 }
-
-const httpsConfig =
-  fs.existsSync(keyPath) && fs.existsSync(certPath)
-    ? {
-        key: fs.readFileSync(keyPath),
-        cert: fs.readFileSync(certPath),
-      }
-    : undefined;
 
 export default defineConfig({
   base: basePath,

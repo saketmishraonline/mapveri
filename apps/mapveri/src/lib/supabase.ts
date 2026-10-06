@@ -52,7 +52,6 @@ export async function signInWithSupabase(
       redirectTo,
       queryParams: {
         access_type: 'offline',
-        prompt: 'consent',
       },
     },
   });

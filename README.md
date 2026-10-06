@@ -72,8 +72,8 @@ Run all commands from the repository root:
 
 The development server automatically seeds a small demo dataset when connecting to an empty database:
 
-- **Admin Email**: `admin@mapveri.local`
-- **Password**: `demo-password`
+- **Admin Identifier**: `admin@mapveri.local` or `admin_mapveri` or `admin`
+- **Admin Password**: `admin123` or `demo-password`
 
 To manually create an admin user in PostgreSQL:
 ```sql

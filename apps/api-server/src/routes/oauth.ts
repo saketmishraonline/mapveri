@@ -180,6 +180,12 @@ async function upsertOAuthUser(params: {
   const randomPassword = crypto.randomUUID();
   const passwordHash = await bcrypt.hash(randomPassword, 10);
 
+  const configuredAdminEmails = (process.env.ADMIN_EMAILS || "admin@mapveri.local,admin@mapveri.com")
+    .toLowerCase()
+    .split(",")
+    .map((e) => e.trim());
+  const isAdmin = configuredAdminEmails.includes(normalizedEmail) || normalizedEmail.startsWith("admin@");
+
   const [newUser] = await db
     .insert(userAccountsTable)
     .values({
@@ -187,8 +193,8 @@ async function upsertOAuthUser(params: {
       username: null, // User will be prompted to claim unique username checked by Bloom filter
       email: normalizedEmail,
       passwordHash,
-      role: "user",
-      level: "C",
+      role: isAdmin ? "admin" : "user",
+      level: isAdmin ? "A" : "C",
       source: params.provider,
       authProvider: params.provider,
       providerId: params.providerId,

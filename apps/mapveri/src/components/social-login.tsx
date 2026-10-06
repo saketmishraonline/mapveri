@@ -216,19 +216,36 @@ export function SocialLoginTiles({
     setLoadingProvider(provider);
     try {
       // 1. Check if server has direct OAuth client credentials configured in .env
+      // Direct OAuth displays YOUR domain (e.g. localhost or mapveri.com) on Google, completely free!
       const redirectUri = `${window.location.origin}/login?oauth_callback=${provider}`;
       const res = await fetch(`/api/auth/oauth/${provider}/url?redirectUri=${encodeURIComponent(redirectUri)}`);
       const data = await res.json().catch(() => ({ configured: false, url: null }));
 
       if (data.configured && data.url) {
-        // Live redirect flow to Google / Zoho / Microsoft
         window.location.href = data.url;
         return;
       }
 
-      // 2. Open interactive Third-Party Verification Modal for testing & setup instructions
+      // 2. If direct OAuth is not configured in .env, fall back to Supabase Cloud OAuth
+      if (supabaseActive && (provider === 'google' || provider === 'outlook')) {
+        const sbProvider = provider === 'outlook' ? 'azure' : 'google';
+        await signInWithSupabase(sbProvider, `${window.location.origin}/login`);
+        return;
+      }
+
+      // 3. Open interactive Third-Party Verification Modal for testing & setup instructions
       setActiveModalProvider(provider);
-    } catch {
+    } catch (err: any) {
+      console.error('OAuth sign-in error:', err);
+      if (supabaseActive && (provider === 'google' || provider === 'outlook')) {
+        try {
+          const sbProvider = provider === 'outlook' ? 'azure' : 'google';
+          await signInWithSupabase(sbProvider, `${window.location.origin}/login`);
+          return;
+        } catch {
+          // ignore
+        }
+      }
       setActiveModalProvider(provider);
     } finally {
       setLoadingProvider(null);

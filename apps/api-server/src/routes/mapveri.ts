@@ -125,9 +125,15 @@ router.post("/auth/set-username", async (req, res): Promise<void> => {
     return;
   }
 
+  const rawName = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const nameToUpdate = rawName || user.name;
+
   const [updated] = await db
     .update(userAccountsTable)
-    .set({ username: normalized })
+    .set({
+      username: normalized,
+      ...(nameToUpdate ? { name: nameToUpdate } : {}),
+    })
     .where(eq(userAccountsTable.id, user.id))
     .returning();
 

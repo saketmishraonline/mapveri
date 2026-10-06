@@ -140,26 +140,34 @@ export function SocialLoginTiles({
   useEffect(() => {
     if (typeof window === 'undefined' || !supabase) return;
 
-    // Check existing Supabase session (e.g. after redirect callback)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        syncSupabaseUserWithBackend(session)
-          .then(() => {
-            queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
-            if (onSuccess) onSuccess();
-            else setLocation('/map');
-          })
-          .catch((err) => {
-            console.error('Supabase session sync error:', err);
-          });
-      }
-    });
+    const hasOAuthParams =
+      window.location.hash.includes('access_token') ||
+      window.location.search.includes('code=');
+
+    // Only process session if returning from OAuth redirect callback
+    if (hasOAuthParams) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          syncSupabaseUserWithBackend(session)
+            .then(() => {
+              queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+              window.history.replaceState({}, document.title, window.location.pathname);
+              if (onSuccess) onSuccess();
+              else setLocation('/map');
+            })
+            .catch((err) => {
+              console.error('Supabase session sync error:', err);
+            });
+        }
+      });
+    }
 
     const { data: authSubscription } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session) {
+      if (event === 'SIGNED_IN' && session && hasOAuthParams) {
         try {
           await syncSupabaseUserWithBackend(session);
           queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+          window.history.replaceState({}, document.title, window.location.pathname);
           if (onSuccess) onSuccess();
           else setLocation('/map');
         } catch (err) {

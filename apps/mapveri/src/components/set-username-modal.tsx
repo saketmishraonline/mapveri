@@ -17,6 +17,7 @@ export function SetUsernameModal({ user }: SetUsernameModalProps) {
       : user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 15)
   ).replace(/^_+|_+$/g, '');
 
+  const [name, setName] = useState(user.name || '');
   const [username, setUsername] = useState(initialSuggestion || '');
   const [status, setStatus] = useState<{
     checking: boolean;
@@ -67,7 +68,10 @@ export function SetUsernameModal({ user }: SetUsernameModalProps) {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ username: username.trim().toLowerCase() }),
+        body: JSON.stringify({
+          name: name.trim() || user.name,
+          username: username.trim().toLowerCase(),
+        }),
       });
 
       if (!res.ok) {
@@ -92,24 +96,40 @@ export function SetUsernameModal({ user }: SetUsernameModalProps) {
           </div>
           <div>
             <h3 className="font-display text-lg font-bold text-[#f6f1df]">
-              Choose Your Handle
+              Complete Your Profile
             </h3>
             <p className="text-xs text-[#8eaaa2]">
-              Signed in via <span className="capitalize font-semibold text-[#f1c744]">{user.source || 'OAuth'}</span>
+              Verified via <span className="capitalize font-semibold text-[#f1c744]">{user.source || 'Google'}</span> ({user.email})
             </p>
           </div>
         </div>
 
         <p className="mt-4 text-xs leading-5 text-[#a9c4ba]">
-          Welcome <strong className="text-[#f6f1df]">{user.name}</strong> ({user.email})!
-          Please select your unique username handle. All your local map pins and verifications will be attributed to this handle.
+          Welcome! Before you start exploring and adding places to the map, please confirm your name and select a unique username handle.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
           <div>
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold text-[#dce7dc]">
-                Username Handle
+                Full Name
+              </span>
+              <input
+                required
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Alex Rivera"
+                data-testid="input-oauth-set-name"
+                className="w-full rounded-lg border border-[#3c5c6a] bg-[#203a4a] py-2.5 px-3 text-sm text-[#f6f1df] outline-none transition focus:border-[#f1c744] focus:ring-2 focus:ring-[#f1c744]/20 shadow-2xs"
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold text-[#dce7dc]">
+                Unique Username Handle
               </span>
               <div className="relative">
                 <AtSign className="absolute left-3.5 top-3 text-[#7f9d91]" size={16} />

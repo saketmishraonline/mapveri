@@ -29,6 +29,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { signOutUser } from '@/lib/supabase';
 import {
   useCreatePin,
   useGetPin,
@@ -1070,9 +1071,11 @@ function MobileNavigationDrawer({
   onSwitchToDesktop?: () => void;
 }) {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
-  const handleSignOut = () => {
-    window.localStorage.removeItem('mapveri_token');
+  const handleSignOut = async () => {
+    await signOutUser();
+    queryClient.clear();
     setLocation('/login');
     onClose();
   };

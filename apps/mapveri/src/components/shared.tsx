@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'wouter';
 import { MapPinned, Compass, UserRound, ShieldCheck, LogOut, Bell, Menu, X, CircleHelp, Activity, Layers3 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
 import { PwaInstallButton } from '@/components/pwa-prompt';
+import { signOutUser } from '@/lib/supabase';
 
 export const colors = {
   ink: 'text-[#172a3a]',
@@ -96,6 +98,8 @@ const navItems = [
 ];
 
 export function UserHeaderControls({ userName }: { userName?: string }) {
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -110,6 +114,13 @@ export function UserHeaderControls({ userName }: { userName?: string }) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
+
+  const handleSignOut = async () => {
+    setOpen(false);
+    await signOutUser();
+    queryClient.clear();
+    setLocation('/login');
+  };
 
   return (
     <div ref={containerRef} className="relative flex items-center gap-2.5">
@@ -129,18 +140,26 @@ export function UserHeaderControls({ userName }: { userName?: string }) {
       {open && (
         <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-[#d6ded4] bg-[#fffdf9] p-3 shadow-xl z-50 text-left">
           <div className="flex items-center justify-between border-b border-[#e5ebe3] pb-2">
-            <span className="text-xs font-bold text-[#172a3a]">Notifications</span>
+            <span className="text-xs font-bold text-[#172a3a]">Menu</span>
             <span className="rounded bg-[#f1c744]/30 px-1.5 py-0.5 font-mono-map text-[9px] font-bold text-[#806414]">Live</span>
           </div>
           <div className="mt-2 space-y-1.5">
             <Link
-              href="/admin/queue"
+              href="/profile"
               onClick={() => setOpen(false)}
               className="block rounded-lg bg-[#f8f5ea] p-2 hover:bg-[#edf3ed] transition"
             >
-              <p className="text-xs font-bold text-[#2d6b60]">Review queue</p>
-              <p className="text-[11px] text-[#708079]">Check pending community contributions.</p>
+              <p className="text-xs font-bold text-[#2d6b60]">My Profile</p>
+              <p className="text-[11px] text-[#708079]">View contributions and standing.</p>
             </Link>
+            <button
+              onClick={handleSignOut}
+              className="flex w-full items-center gap-2 rounded-lg p-2 text-xs font-bold text-[#a34635] hover:bg-[#fff0ed] transition border-t border-[#f0f0e8] text-left"
+              data-testid="button-header-signout"
+            >
+              <LogOut size={14} />
+              <span>Sign out</span>
+            </button>
           </div>
         </div>
       )}
@@ -159,6 +178,7 @@ export function UserHeaderControls({ userName }: { userName?: string }) {
 
 export function Shell({ children, admin = false, hideBreadcrumb = false, hideHeaderOnDesktop = false }: { children: React.ReactNode; admin?: boolean; hideBreadcrumb?: boolean; hideHeaderOnDesktop?: boolean }) {
   const [location, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [mobileOpen, setMobileOpen] = useState(false);
   const me = useGetMe({ query: { enabled: true, queryKey: getGetMeQueryKey(), staleTime: 60_000 } });
   const user = me.data;
@@ -183,7 +203,7 @@ export function Shell({ children, admin = false, hideBreadcrumb = false, hideHea
       {!admin && user?.role === 'admin' && <div className="mt-4 border-t border-[#355064] pt-3"><p className="mb-1.5 font-mono-map text-[9px] uppercase tracking-[.18em] text-[#8eaaa2]">Admin tools</p><Link href="/admin/overview" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#bdcec5] transition hover:bg-[#284252] hover:text-[#f6f1df]" data-testid="link-admin-tools"><ShieldCheck size={16} />Admin console</Link></div>}
       <div className="mt-auto space-y-3 pt-3">
         {!admin && <div className="rounded-xl border border-[#345263] bg-[#203a4a] p-3"><div className="flex items-center gap-1.5 text-[#f1c744]"><CircleHelp size={14} /><span className="text-xs font-bold">Why points matter</span></div><p className="mt-1 text-xs leading-4 text-[#b7cbc1]">Consistent neighbors earn more weight in the map.</p><Link href="/profile" className="mt-2 inline-block text-xs font-bold text-[#f1c744] underline-offset-4 hover:underline" data-testid="link-learn-points">See your standing</Link></div>}
-        <div className="flex items-center gap-2.5 border-t border-[#355064] pt-3"><Avatar name={user?.name} size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-[#edf3e8]" data-testid="text-current-user">{user?.name ?? 'Loading profile'}</p><p className="text-[10px] text-[#91aaa0]">{user ? `Level ${user.level} contributor` : 'Community member'}</p></div><button onClick={() => { window.localStorage.removeItem('mapveri_token'); setLocation('/login'); }} className="text-[#8eaaa0] transition hover:text-[#f1c744]" aria-label="Sign out" data-testid="button-sign-out"><LogOut size={15} /></button></div>
+        <div className="flex items-center gap-2.5 border-t border-[#355064] pt-3"><Avatar name={user?.name} size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-[#edf3e8]" data-testid="text-current-user">{user?.name ?? 'Loading profile'}</p><p className="text-[10px] text-[#91aaa0]">{user ? `Level ${user.level} contributor` : 'Community member'}</p></div><button onClick={async () => { await signOutUser(); queryClient.clear(); setLocation('/login'); }} className="text-[#8eaaa0] transition hover:text-[#f1c744]" aria-label="Sign out" data-testid="button-sign-out"><LogOut size={15} /></button></div>
       </div>
     </aside>
     {mobileOpen && <button className="fixed inset-0 z-30 bg-[#172a3a]/45 md:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation" data-testid="button-overlay-close" />}

@@ -184,16 +184,10 @@ async function upsertOAuthUser(params: {
       throw new Error("This account has been banned.");
     }
 
-    let finalUsername = existingUser.username;
-    if (!finalUsername) {
-      finalUsername = await generateUniqueUsername(normalizedEmail, normalizedName);
-    }
-
     const [updatedUser] = await db
       .update(userAccountsTable)
       .set({
         name: existingUser.name || normalizedName,
-        username: finalUsername,
         source: params.provider,
         authProvider: params.provider,
         providerId: params.providerId,
@@ -212,7 +206,7 @@ async function upsertOAuthUser(params: {
     return updatedUser;
   }
 
-  // Create new user with source set to provider and a generated unique username
+  // Create new user with source set to provider. username is left null so first-time modal asks for name & username
   const randomPassword = crypto.randomUUID();
   const passwordHash = await bcrypt.hash(randomPassword, 10);
 
@@ -222,13 +216,11 @@ async function upsertOAuthUser(params: {
     .map((e) => e.trim());
   const isAdmin = configuredAdminEmails.includes(normalizedEmail) || normalizedEmail.startsWith("admin@");
 
-  const finalUsername = await generateUniqueUsername(normalizedEmail, normalizedName);
-
   const [newUser] = await db
     .insert(userAccountsTable)
     .values({
       name: normalizedName,
-      username: finalUsername,
+      username: null, // First-time prompt asks for name and username
       email: normalizedEmail,
       passwordHash,
       role: isAdmin ? "admin" : "user",

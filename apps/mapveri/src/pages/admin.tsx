@@ -108,6 +108,31 @@ function AdminMap() {
 }
 
 export function AdminPage({ view = 'redirect' }: { view?: 'redirect' | 'overview' | 'queue' | 'pins' | 'users' | 'map' }) {
+  const [, setLocation] = useLocation();
+  const me = useGetMe({ query: { queryKey: ['mapveri-admin-me'], staleTime: 30_000 } });
+
+  useEffect(() => {
+    if (me.isFetched && !me.isLoading) {
+      if (!me.data) {
+        setLocation('/login');
+      } else if (me.data.role !== 'admin') {
+        setLocation('/map');
+      }
+    }
+  }, [me.isFetched, me.isLoading, me.data, setLocation]);
+
+  if (me.isLoading) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[#f3f0e5]">
+        <Skeleton className="h-40 w-96 rounded-2xl" />
+      </div>
+    );
+  }
+
+  if (!me.data || me.data.role !== 'admin') {
+    return null;
+  }
+
   if (view === 'redirect') return <AdminRedirect />;
   if (view === 'overview') return <AdminOverview />;
   if (view === 'queue') return <AdminQueue />;

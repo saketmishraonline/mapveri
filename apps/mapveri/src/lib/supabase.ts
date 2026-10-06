@@ -52,6 +52,7 @@ export async function signInWithSupabase(
       redirectTo,
       queryParams: {
         access_type: 'offline',
+        ...(provider === 'google' ? { prompt: 'select_account' } : {}),
       },
     },
   });
@@ -65,6 +66,20 @@ export async function signInWithSupabase(
   }
 
   return data;
+}
+
+/**
+ * Completely sign out user from both MapVeri backend and Supabase
+ */
+export async function signOutUser() {
+  window.localStorage.removeItem('mapveri_token');
+  if (supabase) {
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (e) {
+      console.warn('Supabase sign-out error:', e);
+    }
+  }
 }
 
 /**

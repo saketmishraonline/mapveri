@@ -215,8 +215,18 @@ export function SocialLoginTiles({
   const handleTileClick = async (provider: OAuthProvider) => {
     setLoadingProvider(provider);
     try {
-      // 1. Check if server has direct OAuth client credentials configured in .env
-      // Direct OAuth displays YOUR domain (e.g. localhost or mapveri.com) on Google, completely free!
+      // 1. Primary: Use Supabase Cloud OAuth for all configured providers (Google, Zoho, Outlook/Azure)
+      if (supabaseActive) {
+        const sbProvider = provider === 'outlook' ? 'azure' : provider;
+        try {
+          await signInWithSupabase(sbProvider, `${window.location.origin}/login`);
+          return;
+        } catch (sbErr: any) {
+          console.warn(`Supabase OAuth sign-in for ${provider} failed, trying fallback:`, sbErr);
+        }
+      }
+
+      // 2. Fallback: Check if server has direct OAuth client credentials configured in .env
       const redirectUri = `${window.location.origin}/login?oauth_callback=${provider}`;
       const res = await fetch(`/api/auth/oauth/${provider}/url?redirectUri=${encodeURIComponent(redirectUri)}`);
       const data = await res.json().catch(() => ({ configured: false, url: null }));
@@ -226,26 +236,10 @@ export function SocialLoginTiles({
         return;
       }
 
-      // 2. If direct OAuth is not configured in .env, fall back to Supabase Cloud OAuth
-      if (supabaseActive && (provider === 'google' || provider === 'outlook')) {
-        const sbProvider = provider === 'outlook' ? 'azure' : 'google';
-        await signInWithSupabase(sbProvider, `${window.location.origin}/login`);
-        return;
-      }
-
       // 3. Open interactive Third-Party Verification Modal for testing & setup instructions
       setActiveModalProvider(provider);
     } catch (err: any) {
       console.error('OAuth sign-in error:', err);
-      if (supabaseActive && (provider === 'google' || provider === 'outlook')) {
-        try {
-          const sbProvider = provider === 'outlook' ? 'azure' : 'google';
-          await signInWithSupabase(sbProvider, `${window.location.origin}/login`);
-          return;
-        } catch {
-          // ignore
-        }
-      }
       setActiveModalProvider(provider);
     } finally {
       setLoadingProvider(null);

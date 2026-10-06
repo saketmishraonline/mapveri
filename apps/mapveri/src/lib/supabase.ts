@@ -34,10 +34,10 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured()
 
 
 /**
- * Initiates OAuth login using Supabase (e.g. Google, Azure/Outlook)
+ * Initiates OAuth login using Supabase (e.g. Google, Azure/Outlook, Zoho)
  */
 export async function signInWithSupabase(
-  provider: 'google' | 'azure',
+  provider: 'google' | 'azure' | 'zoho' | string,
   redirectTo = `${window.location.origin}/login`
 ) {
   if (!supabase) {
@@ -47,7 +47,7 @@ export async function signInWithSupabase(
   }
 
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
+    provider: provider as any,
     options: {
       redirectTo,
       queryParams: {
@@ -60,6 +60,10 @@ export async function signInWithSupabase(
     throw error;
   }
 
+  if (data?.url) {
+    window.location.href = data.url;
+  }
+
   return data;
 }
 
@@ -68,16 +72,29 @@ export async function signInWithSupabase(
  */
 export async function syncSupabaseUserWithBackend(session: Session) {
   const user = session.user;
+  const email = user.email;
+  if (!email) {
+    throw new Error('Supabase session does not contain an email address');
+  }
+
   const res = await fetch('/api/auth/supabase-sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       supabaseAccessToken: session.access_token,
-      email: user.email,
-      name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0],
-      avatarUrl: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-      provider: user.app_metadata?.provider || 'google',
-      providerId: user.id,
+      email: email,
+      name:
+        user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        user.user_metadata?.user_name ||
+        email.split('@')[0],
+      avatarUrl:
+        user.user_metadata?.avatar_url ||
+        user.user_metadata?.picture ||
+        user.user_metadata?.avatar ||
+        null,
+      provider: user.app_metadata?.provider || user.identities?.[0]?.provider || 'google',
+      providerId: user.id || user.identities?.[0]?.id,
     }),
   });
 

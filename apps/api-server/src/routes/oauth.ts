@@ -5,6 +5,7 @@ import { eq, ilike } from "drizzle-orm";
 import { db, userAccountsTable, userActivitiesTable, usersTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { getUserWithActivity, publicUser, signUser, userFromRequest } from "../lib/mapveri";
+import { usernameBloomFilter } from "../lib/bloom-filter";
 
 const router: IRouter = Router();
 
@@ -122,6 +123,35 @@ router.get("/auth/oauth/:provider/url", (req: Request, res: Response): void => {
 });
 
 // Helper to upsert a user authenticated via third-party verification
+async function generateUniqueUsername(email: string, name: string): Promise<string> {
+  const emailPrefix = email.split("@")[0] || "";
+  let base = emailPrefix.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 15);
+  if (!base || base.length < 3) {
+    base = (name || "user").toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 15);
+  }
+  if (!base || base.length < 3) {
+    base = `user_${Math.floor(1000 + Math.random() * 9000)}`;
+  }
+
+  let candidate = base;
+  let counter = 1;
+  while (true) {
+    const [existing] = await db
+      .select({ id: userAccountsTable.id })
+      .from(userAccountsTable)
+      .where(ilike(userAccountsTable.username, candidate))
+      .limit(1);
+
+    if (!existing) {
+      usernameBloomFilter.add(candidate);
+      return candidate;
+    }
+
+    candidate = `${base.slice(0, 12)}_${counter}`;
+    counter++;
+  }
+}
+
 async function upsertOAuthUser(params: {
   provider: "google" | "zoho" | "outlook";
   email: string;
@@ -154,10 +184,16 @@ async function upsertOAuthUser(params: {
       throw new Error("This account has been banned.");
     }
 
+    let finalUsername = existingUser.username;
+    if (!finalUsername) {
+      finalUsername = await generateUniqueUsername(normalizedEmail, normalizedName);
+    }
+
     const [updatedUser] = await db
       .update(userAccountsTable)
       .set({
         name: existingUser.name || normalizedName,
+        username: finalUsername,
         source: params.provider,
         authProvider: params.provider,
         providerId: params.providerId,
@@ -176,7 +212,7 @@ async function upsertOAuthUser(params: {
     return updatedUser;
   }
 
-  // Create new user with source set to provider, username null initially (prompted on sign in)
+  // Create new user with source set to provider and a generated unique username
   const randomPassword = crypto.randomUUID();
   const passwordHash = await bcrypt.hash(randomPassword, 10);
 
@@ -186,11 +222,13 @@ async function upsertOAuthUser(params: {
     .map((e) => e.trim());
   const isAdmin = configuredAdminEmails.includes(normalizedEmail) || normalizedEmail.startsWith("admin@");
 
+  const finalUsername = await generateUniqueUsername(normalizedEmail, normalizedName);
+
   const [newUser] = await db
     .insert(userAccountsTable)
     .values({
       name: normalizedName,
-      username: null, // User will be prompted to claim unique username checked by Bloom filter
+      username: finalUsername,
       email: normalizedEmail,
       passwordHash,
       role: isAdmin ? "admin" : "user",

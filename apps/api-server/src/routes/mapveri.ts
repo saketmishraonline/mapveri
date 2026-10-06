@@ -241,6 +241,13 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   if (!user || !isPasswordValid) {
+    if (user && user.authProvider !== "local" && user.source !== "mapveri") {
+      const provName = user.source || user.authProvider || "OAuth";
+      res.status(401).json({
+        error: `This account was registered using ${provName}. Please sign in using the ${provName.toUpperCase()} button below.`,
+      });
+      return;
+    }
     res.status(401).json({ error: "Invalid username/email or password" });
     return;
   }

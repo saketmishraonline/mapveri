@@ -15,8 +15,14 @@ export interface OsmMapProps {
   selectedId: number | null;
   onSelectPin: (id: number) => void;
   onMapClick?: (lat: number, lng: number) => void;
+  onMapDoubleClick?: (lat: number, lng: number) => void;
+  droppedPin?: { lat: number; lng: number } | null;
+  onClearDroppedPin?: () => void;
+  onAddPlaceAtCoords?: (lat: number, lng: number) => void;
   interactive?: boolean;
   hideDefaultOverlays?: boolean;
+  hideQuickJumps?: boolean;
+  dimOverlays?: boolean;
   activeLayer?: keyof typeof TILE_LAYERS;
   onLayerChange?: (layer: keyof typeof TILE_LAYERS) => void;
   onMapReady?: (map: maplibregl.Map) => void;
@@ -131,8 +137,14 @@ export function OsmMap({
   selectedId,
   onSelectPin,
   onMapClick,
+  onMapDoubleClick,
+  droppedPin,
+  onClearDroppedPin,
+  onAddPlaceAtCoords,
   interactive = true,
   hideDefaultOverlays = false,
+  hideQuickJumps = false,
+  dimOverlays = false,
   activeLayer: externalActiveLayer,
   onLayerChange,
   onMapReady,
@@ -142,7 +154,15 @@ export function OsmMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
+  const droppedMarkerRef = useRef<maplibregl.Marker | null>(null);
   const trackerRef = useRef<LocationTracker | null>(null);
+
+  const onMapClickRef = useRef(onMapClick);
+  const onMapDoubleClickRef = useRef(onMapDoubleClick);
+  useEffect(() => {
+    onMapClickRef.current = onMapClick;
+    onMapDoubleClickRef.current = onMapDoubleClick;
+  });
 
   const [trackingStatus, setTrackingStatus] = useState<TrackingStatus>('idle');
   const [isFollowing, setIsFollowing] = useState(false);
@@ -186,6 +206,10 @@ export function OsmMap({
       attributionControl: false,
       interactive,
     });
+
+    if (onMapDoubleClickRef.current) {
+      map.doubleClickZoom.disable();
+    }
 
     mapRef.current = map;
     onMapReady?.(map);
@@ -235,9 +259,30 @@ export function OsmMap({
       setZoomLevel(Math.round(map.getZoom()));
     });
 
+    let clickTimer: any = null;
+
     map.on('click', (e: maplibregl.MapMouseEvent) => {
-      if (onMapClick) {
-        onMapClick(Number(e.lngLat.lat.toFixed(6)), Number(e.lngLat.lng.toFixed(6)));
+      const lat = Number(e.lngLat.lat.toFixed(6));
+      const lng = Number(e.lngLat.lng.toFixed(6));
+      if (onMapDoubleClickRef.current) {
+        if (clickTimer) clearTimeout(clickTimer);
+        clickTimer = setTimeout(() => {
+          onMapClickRef.current?.(lat, lng);
+          clickTimer = null;
+        }, 220);
+      } else {
+        onMapClickRef.current?.(lat, lng);
+      }
+    });
+
+    map.on('dblclick', (e: maplibregl.MapMouseEvent) => {
+      if (onMapDoubleClickRef.current) {
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+        }
+        e.preventDefault();
+        onMapDoubleClickRef.current(Number(e.lngLat.lat.toFixed(6)), Number(e.lngLat.lng.toFixed(6)));
       }
     });
 
@@ -247,6 +292,7 @@ export function OsmMap({
     }, 200);
 
     return () => {
+      if (clickTimer) clearTimeout(clickTimer);
       clearTimeout(timer);
       tracker.destroy();
       trackerRef.current = null;
@@ -360,6 +406,109 @@ export function OsmMap({
     });
   }, [pins, selectedId, onSelectPin]);
 
+  // Handle Dropped Temporary Red Location Pin
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    if (droppedMarkerRef.current) {
+      droppedMarkerRef.current.remove();
+      droppedMarkerRef.current = null;
+    }
+
+    if (!droppedPin) return;
+
+    const el = document.createElement('div');
+    el.className = 'maplibre-dropped-pin';
+    el.style.cursor = 'pointer';
+    el.innerHTML = `
+      <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+        <div style="
+          width: 32px;
+          height: 32px;
+          border-radius: 50% 50% 50% 0;
+          background: #e11d48;
+          transform: rotate(-45deg);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 14px rgba(225, 29, 72, 0.45);
+          border: 2px solid #ffffff;
+        ">
+          <div style="width: 10px; height: 10px; border-radius: 50%; background: #ffffff;"></div>
+        </div>
+      </div>
+    `;
+
+    const popupContent = document.createElement('div');
+    popupContent.style.padding = '4px 2px';
+    popupContent.style.minWidth = '185px';
+    popupContent.style.fontFamily = 'inherit';
+    popupContent.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 3px;">
+        <span style="font-size: 10px; font-weight: 700; color: #e11d48; text-transform: uppercase; letter-spacing: 0.05em;">Selected Location</span>
+      </div>
+      <div style="font-family: monospace; font-size: 11px; font-weight: 700; color: #172a3a; margin-bottom: 6px;">
+        ${droppedPin.lat.toFixed(5)}, ${droppedPin.lng.toFixed(5)}
+      </div>
+      <button id="btn-add-place-dropped" style="
+        width: 100%;
+        background: #2d6b60;
+        color: #fffdf5;
+        border: none;
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        transition: opacity 0.15s;
+      ">
+        + Add a place here
+      </button>
+    `;
+
+    const addBtn = popupContent.querySelector('#btn-add-place-dropped');
+    if (addBtn) {
+      addBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onAddPlaceAtCoords?.(droppedPin.lat, droppedPin.lng);
+      });
+    }
+
+    const popup = new maplibregl.Popup({
+      offset: 32,
+      closeButton: true,
+      closeOnClick: false,
+    })
+      .setLngLat([droppedPin.lng, droppedPin.lat])
+      .setDOMContent(popupContent);
+
+    popup.on('close', () => {
+      onClearDroppedPin?.();
+    });
+
+    const marker = new maplibregl.Marker({
+      element: el,
+      anchor: 'bottom',
+    })
+      .setLngLat([droppedPin.lng, droppedPin.lat])
+      .setPopup(popup)
+      .addTo(mapRef.current);
+
+    marker.togglePopup();
+    droppedMarkerRef.current = marker;
+
+    return () => {
+      if (droppedMarkerRef.current) {
+        droppedMarkerRef.current.remove();
+        droppedMarkerRef.current = null;
+      }
+    };
+  }, [droppedPin, onAddPlaceAtCoords, onClearDroppedPin]);
+
   // Center on selected pin if changed externally
   useEffect(() => {
     if (!selectedId || !mapRef.current) return;
@@ -438,29 +587,31 @@ export function OsmMap({
 
       {!hideDefaultOverlays && (
         <>
-          {/* Top Left: Quick Landmark Jumps for Boisar */}
-          <div className="absolute left-4 top-4 z-[400] flex flex-wrap gap-2">
-            <button
-              onClick={handleCenterTheem}
-              className="flex items-center gap-1.5 rounded-lg border border-[#c5d0c6] bg-[#f8f5ea]/95 px-3 py-1.5 text-xs font-bold text-[#1f4a43] shadow-md backdrop-blur hover:bg-[#eaf1e9] transition"
-              title="Jump to Theem College of Engineering, Boisar"
-            >
-              <span className="h-2 w-2 rounded-full bg-[#2d6b60]" />
-              Theem College
-            </button>
-            <button
-              onClick={handleCenterBoisar}
-              className="flex items-center gap-1.5 rounded-lg border border-[#c5d0c6] bg-[#f8f5ea]/95 px-3 py-1.5 text-xs font-bold text-[#243f48] shadow-md backdrop-blur hover:bg-[#eaf1e9] transition"
-              title="Jump to Boisar Town Center"
-            >
-              <Compass size={13} className="text-[#dba91a]" />
-              Boisar Center
-            </button>
-          </div>
+          {/* Top Left: Quick Landmark Jumps */}
+          {!hideQuickJumps && (
+            <div className={`absolute left-4 top-4 z-10 flex flex-wrap gap-2 transition-all duration-300 ${dimOverlays ? 'pointer-events-none opacity-30 blur-[2px]' : 'opacity-100'}`}>
+              <button
+                onClick={handleCenterTheem}
+                className="flex items-center gap-1.5 rounded-lg border border-[#c5d0c6] bg-[#f8f5ea]/95 px-3 py-1.5 text-xs font-bold text-[#1f4a43] shadow-md backdrop-blur hover:bg-[#eaf1e9] transition"
+                title="Jump to Theem College of Engineering, Boisar"
+              >
+                <span className="h-2 w-2 rounded-full bg-[#2d6b60]" />
+                Theem College
+              </button>
+              <button
+                onClick={handleCenterBoisar}
+                className="flex items-center gap-1.5 rounded-lg border border-[#c5d0c6] bg-[#f8f5ea]/95 px-3 py-1.5 text-xs font-bold text-[#243f48] shadow-md backdrop-blur hover:bg-[#eaf1e9] transition"
+                title="Jump to Boisar Town Center"
+              >
+                <Compass size={13} className="text-[#dba91a]" />
+                Boisar Center
+              </button>
+            </div>
+          )}
 
           {/* Floating Live GPS Tracking Badge */}
           {trackingStatus === 'tracking' && currentGpsLocation && (
-            <div className="absolute left-4 top-16 z-[400] flex items-center gap-2.5 rounded-xl border border-blue-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur animate-in fade-in slide-in-from-top-2">
+            <div className={`absolute left-4 top-16 z-10 flex items-center gap-2.5 rounded-xl border border-blue-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur animate-in fade-in slide-in-from-top-2 transition-all duration-300 ${dimOverlays ? 'pointer-events-none opacity-30 blur-[2px]' : 'opacity-100'}`}>
               <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
@@ -500,14 +651,14 @@ export function OsmMap({
           )}
 
           {trackingStatus === 'locating' && (
-            <div className="absolute left-4 top-16 z-[400] flex items-center gap-2 rounded-xl border border-blue-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur animate-pulse">
+            <div className={`absolute left-4 top-16 z-10 flex items-center gap-2 rounded-xl border border-blue-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur animate-pulse transition-all duration-300 ${dimOverlays ? 'pointer-events-none opacity-30 blur-[2px]' : 'opacity-100'}`}>
               <Loader2 size={14} className="animate-spin text-blue-600" />
               <span className="text-xs font-semibold text-slate-800">Acquiring GPS Signal...</span>
             </div>
           )}
 
           {/* Top Right: OSM Controls (Layer Switcher, Locate, Zoom) */}
-          <div className="absolute right-4 top-4 z-[400] flex flex-col gap-2">
+          <div className={`absolute right-4 top-4 z-10 flex flex-col gap-2 transition-all duration-300 ${dimOverlays ? 'pointer-events-none opacity-30 blur-[2px]' : 'opacity-100'}`}>
             {/* Layer Selector */}
             <div className="relative">
               <button
@@ -613,12 +764,16 @@ export function OsmMap({
           </div>
 
           {/* Bottom Bar: Indian Region & OSM Info Badge */}
-          <div className="absolute bottom-3 left-3 right-3 z-[400] flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+          <div className={`absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none transition-all duration-300 ${dimOverlays ? 'opacity-30 blur-[2px]' : 'opacity-100'}`}>
             {/* Left: Region & Coordinates Tag */}
             <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-[#b7c6b9] bg-[#f8f5ea]/95 px-3 py-1.5 text-[11px] font-medium text-[#243f48] shadow-sm backdrop-blur">
               <span className="flex h-2 w-2 rounded-full bg-[#2d6b60]" />
-              <span className="font-bold text-[#1f4a43]">Boisar, Maharashtra (IN)</span>
-              <span className="text-[#8c9c94]">·</span>
+              {!hideQuickJumps && (
+                <>
+                  <span className="font-bold text-[#1f4a43]">Boisar, Maharashtra (IN)</span>
+                  <span className="text-[#8c9c94]">·</span>
+                </>
+              )}
               <span className="font-mono-map text-[10px] text-[#49655f]">
                 {formatDms(currentCoords.lat, true)} {formatDms(currentCoords.lng, false)}
               </span>

@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'wouter';
-import { MapPinned, Compass, UserRound, ShieldCheck, LogOut, Bell, Menu, X, CircleHelp, Activity, Layers3 } from 'lucide-react';
+import { MapPinned, Compass, UserRound, ShieldCheck, LogOut, Bell, Menu, X, Activity, Layers3 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
+import { useGetMe, getGetMeQueryKey, useListPins, type Pin, type NearbyPin } from '@workspace/api-client-react';
 import { PwaInstallButton } from '@/components/pwa-prompt';
 import { signOutUser } from '@/lib/supabase';
 
@@ -100,83 +100,178 @@ const navItems = [
 export function UserHeaderControls({ userName }: { userName?: string }) {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [unread, setUnread] = useState(true);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const unverifiedQuery = useListPins(
+    { status: 'unverified' },
+    { query: { staleTime: 30_000 } }
+  );
+  const unverifiedPins = (Array.isArray(unverifiedQuery.data) ? unverifiedQuery.data : []) as (Pin | NearbyPin)[];
+
   useEffect(() => {
-    if (!open) return;
+    if (!notifOpen && !menuOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
+        setNotifOpen(false);
+        setMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [open]);
+  }, [notifOpen, menuOpen]);
 
   const handleSignOut = async () => {
-    setOpen(false);
+    setMenuOpen(false);
     await signOutUser();
     queryClient.clear();
     setLocation('/login');
   };
 
+  const handleSelectPinNotification = (pinId: number) => {
+    setNotifOpen(false);
+    window.dispatchEvent(new CustomEvent('mapveri:select-pin', { detail: { id: pinId } }));
+    setLocation(`/map?pin=${pinId}`);
+  };
+
   return (
     <div ref={containerRef} className="relative flex items-center gap-2.5">
-      <button
-        onClick={() => {
-          setOpen((prev) => !prev);
-          setUnread(false);
-        }}
-        className="relative rounded-lg p-1.5 text-[#49655f] transition hover:bg-[#e4e8dc]"
-        aria-label="Notifications"
-        data-testid="button-notifications"
-      >
-        <Bell size={17} />
-        {unread && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#d9533a]" />}
-      </button>
+      {/* 2nd Button: Notifications (Bell icon) */}
+      <div className="relative">
+        <button
+          onClick={() => {
+            setNotifOpen((prev) => !prev);
+            setMenuOpen(false);
+          }}
+          className={`relative rounded-lg p-1.5 transition ${
+            notifOpen ? 'bg-[#e4e8dc] text-[#172a3a]' : 'text-[#49655f] hover:bg-[#e4e8dc]'
+          }`}
+          aria-label="Notifications"
+          data-testid="button-notifications"
+        >
+          <Bell size={17} />
+          {unverifiedPins.length > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#d9533a] px-1 text-[9px] font-bold text-white shadow-xs">
+              {unverifiedPins.length}
+            </span>
+          )}
+        </button>
 
-      {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-[#d6ded4] bg-[#fffdf9] p-3 shadow-xl z-50 text-left">
-          <div className="flex items-center justify-between border-b border-[#e5ebe3] pb-2">
-            <span className="text-xs font-bold text-[#172a3a]">Menu</span>
-            <span className="rounded bg-[#f1c744]/30 px-1.5 py-0.5 font-mono-map text-[9px] font-bold text-[#806414]">Live</span>
-          </div>
-          <div className="mt-2 space-y-1.5">
-            <Link
-              href="/profile"
-              onClick={() => setOpen(false)}
-              className="block rounded-lg bg-[#f8f5ea] p-2 hover:bg-[#edf3ed] transition"
-            >
-              <p className="text-xs font-bold text-[#2d6b60]">My Profile</p>
-              <p className="text-[11px] text-[#708079]">View contributions and standing.</p>
-            </Link>
-            <button
-              onClick={handleSignOut}
-              className="flex w-full items-center gap-2 rounded-lg p-2 text-xs font-bold text-[#a34635] hover:bg-[#fff0ed] transition border-t border-[#f0f0e8] text-left"
-              data-testid="button-header-signout"
-            >
-              <LogOut size={14} />
-              <span>Sign out</span>
-            </button>
-          </div>
-        </div>
-      )}
+        {/* Notifications Window (Same size as Menu popup) */}
+        {notifOpen && (
+          <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 rounded-xl border border-[#d6ded4] bg-[#fffdf9] p-3 shadow-2xl z-[100] text-left animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#e5ebe3] pb-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-[#172a3a]">Notifications</span>
+                {unverifiedPins.length > 0 && (
+                  <span className="rounded-full bg-[#d9533a]/15 px-1.5 py-0.2 font-mono-map text-[9px] font-bold text-[#b83822]">
+                    {unverifiedPins.length} new
+                  </span>
+                )}
+              </div>
+              <span className="rounded bg-[#f1c744]/30 px-1.5 py-0.5 font-mono-map text-[9px] font-bold text-[#806414]">Live</span>
+            </div>
 
-      <Link
-        href="/profile"
-        className="flex items-center gap-2 border-l border-[#d8d8c8] pl-3 text-sm font-bold text-[#2d6b60] hover:opacity-80 transition"
-        data-testid="link-header-profile"
-      >
-        <Avatar name={userName ?? 'admin'} size="sm" />
-        <span>{userName ?? 'admin'}</span>
-      </Link>
+            <div className="mt-2.5 max-h-72 overflow-y-auto space-y-2 pr-0.5">
+              {unverifiedPins.length === 0 ? (
+                <div className="py-6 text-center">
+                  <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-[#e8f1ec] text-[#2d6b60]">
+                    <ShieldCheck size={16} />
+                  </div>
+                  <p className="text-xs font-bold text-[#243f48]">All caught up!</p>
+                  <p className="mt-1 text-[11px] text-[#708079] leading-relaxed px-3">
+                    No nearby places currently need community verification. You will be notified here when neighbors add new locations.
+                  </p>
+                </div>
+              ) : (
+                unverifiedPins.map((pin) => (
+                  <div
+                    key={pin.id}
+                    onClick={() => handleSelectPinNotification(pin.id)}
+                    className="group cursor-pointer rounded-lg border border-[#e4ebe2] bg-[#f8f5ea] p-2.5 hover:bg-[#edf3ed] hover:border-[#c5d8c6] transition"
+                  >
+                    <div className="flex items-start justify-between gap-1.5">
+                      <p className="text-xs font-bold text-[#172a3a] group-hover:text-[#2d6b60] transition truncate">
+                        {pin.name}
+                      </p>
+                      <span className="shrink-0 rounded bg-[#e8ede7] px-1.5 py-0.5 text-[9px] font-semibold text-[#2d6b60]">
+                        {pin.category}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-[#60716d] line-clamp-2">
+                      {pin.description || 'New place added nearby. Community verification requested.'}
+                    </p>
+                    <div className="mt-2 flex items-center justify-between text-[10px] text-[#708079]">
+                      <span>Added by {pin.createdByName || 'neighbor'}</span>
+                      <span className="font-bold text-[#2d6b60] group-hover:underline flex items-center gap-0.5">
+                        Verify place &rarr;
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-2.5 border-t border-[#f0f0e8] pt-2">
+              <p className="text-[10px] text-[#708079] leading-tight text-center">
+                Review & verify nearby pins to keep the map reliable and earn points.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3rd Button: Profile (Avatar + Name) */}
+      <div className="relative">
+        <button
+          onClick={() => {
+            setMenuOpen((prev) => !prev);
+            setNotifOpen(false);
+          }}
+          className={`flex items-center gap-2 border-l border-[#d8d8c8] pl-3 py-0.5 text-sm font-bold text-[#2d6b60] hover:opacity-85 transition cursor-pointer outline-none rounded-r-lg ${
+            menuOpen ? 'opacity-90' : ''
+          }`}
+          data-testid="link-header-profile"
+          aria-label="User menu"
+        >
+          <Avatar name={userName ?? 'admin'} size="sm" />
+          <span>{userName ?? 'admin'}</span>
+        </button>
+
+        {/* Profile Menu Popup Window (from image 1) */}
+        {menuOpen && (
+          <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 rounded-xl border border-[#d6ded4] bg-[#fffdf9] p-3 shadow-2xl z-[100] text-left animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#e5ebe3] pb-2">
+              <span className="text-xs font-bold text-[#172a3a]">Menu</span>
+              <span className="rounded bg-[#f1c744]/30 px-1.5 py-0.5 font-mono-map text-[9px] font-bold text-[#806414]">Live</span>
+            </div>
+            <div className="mt-2 space-y-1.5">
+              <Link
+                href="/profile"
+                onClick={() => setMenuOpen(false)}
+                className="block rounded-lg bg-[#f8f5ea] p-2 hover:bg-[#edf3ed] transition"
+              >
+                <p className="text-xs font-bold text-[#2d6b60]">My Profile</p>
+                <p className="text-[11px] text-[#708079]">View contributions and standing.</p>
+              </Link>
+              <button
+                onClick={handleSignOut}
+                className="flex w-full items-center gap-2 rounded-lg p-2 text-xs font-bold text-[#a34635] hover:bg-[#fff0ed] transition border-t border-[#f0f0e8] text-left cursor-pointer"
+                data-testid="button-header-signout"
+              >
+                <LogOut size={14} />
+                <span>Sign out</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-export function Shell({ children, admin = false, hideBreadcrumb = false, hideHeaderOnDesktop = false }: { children: React.ReactNode; admin?: boolean; hideBreadcrumb?: boolean; hideHeaderOnDesktop?: boolean }) {
+export function Shell({ children, admin = false, hideBreadcrumb = false, hideHeaderOnDesktop = false, headerActions }: { children: React.ReactNode; admin?: boolean; hideBreadcrumb?: boolean; hideHeaderOnDesktop?: boolean; headerActions?: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -202,15 +297,14 @@ export function Shell({ children, admin = false, hideBreadcrumb = false, hideHea
       </nav>
       {!admin && user?.role === 'admin' && <div className="mt-4 border-t border-[#355064] pt-3"><p className="mb-1.5 font-mono-map text-[9px] uppercase tracking-[.18em] text-[#8eaaa2]">Admin tools</p><Link href="/admin/overview" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#bdcec5] transition hover:bg-[#284252] hover:text-[#f6f1df]" data-testid="link-admin-tools"><ShieldCheck size={16} />Admin console</Link></div>}
       <div className="mt-auto space-y-3 pt-3">
-        {!admin && <div className="rounded-xl border border-[#345263] bg-[#203a4a] p-3"><div className="flex items-center gap-1.5 text-[#f1c744]"><CircleHelp size={14} /><span className="text-xs font-bold">Why points matter</span></div><p className="mt-1 text-xs leading-4 text-[#b7cbc1]">Consistent neighbors earn more weight in the map.</p><Link href="/profile" className="mt-2 inline-block text-xs font-bold text-[#f1c744] underline-offset-4 hover:underline" data-testid="link-learn-points">See your standing</Link></div>}
         <div className="flex items-center gap-2.5 border-t border-[#355064] pt-3"><Avatar name={user?.name} size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-[#edf3e8]" data-testid="text-current-user">{user?.name ?? 'Loading profile'}</p><p className="text-[10px] text-[#91aaa0]">{user ? `Level ${user.level} contributor` : 'Community member'}</p></div><button onClick={async () => { await signOutUser(); queryClient.clear(); setLocation('/login'); }} className="text-[#8eaaa0] transition hover:text-[#f1c744]" aria-label="Sign out" data-testid="button-sign-out"><LogOut size={15} /></button></div>
       </div>
     </aside>
     {mobileOpen && <button className="fixed inset-0 z-30 bg-[#172a3a]/45 md:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation" data-testid="button-overlay-close" />}
     <main className="min-w-0 flex-1 flex flex-col md:h-[100dvh] md:overflow-hidden">
-      <header className={`sticky top-0 z-20 flex h-[52px] shrink-0 items-center justify-between border-b border-[#d8d8c8] bg-[#f3f0e5]/95 px-4 backdrop-blur md:px-6 ${hideHeaderOnDesktop ? 'md:hidden' : ''}`}>
+      <header className={`sticky top-0 z-40 flex h-[52px] shrink-0 items-center justify-between border-b border-[#d8d8c8] bg-[#f3f0e5]/95 px-4 backdrop-blur md:px-6 ${hideHeaderOnDesktop ? 'md:hidden' : ''}`}>
         <div className="flex items-center gap-3"><button className="rounded-lg p-1.5 text-[#2d6b60] hover:bg-[#e4e8dc] md:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation" data-testid="button-open-menu"><Menu size={20} /></button>{!hideBreadcrumb && <span className="font-mono-map text-[10px] uppercase tracking-[.15em] text-[#708079]">{admin ? 'MapVeri / Admin' : 'MapVeri / Field notes'}</span>}</div>
-        <div className="flex items-center gap-2.5"><PwaInstallButton /><UserHeaderControls userName={user?.name} /></div>
+        <div className="flex items-center gap-2.5">{headerActions}<PwaInstallButton /><UserHeaderControls userName={user?.name} /></div>
       </header>
       <div className="flex-1 p-3 md:p-4 flex flex-col min-h-0 overflow-y-auto">{children}</div>
     </main>

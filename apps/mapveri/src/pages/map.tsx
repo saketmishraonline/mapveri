@@ -1,7 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'wouter';
-import { Search, Plus, SlidersHorizontal, X, Check, ThumbsDown, ArrowUpRight, LocateFixed, ShieldCheck, MapPin, Smartphone } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  SlidersHorizontal,
+  X,
+  Check,
+  ThumbsDown,
+  ArrowUpRight,
+  LocateFixed,
+  ShieldCheck,
+  MapPin,
+  Navigation,
+  Copy,
+  Share2,
+  Camera,
+  Info,
+  Activity,
+  ChevronUp,
+  ChevronDown,
+  ExternalLink,
+} from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/hooks/use-toast';
 import {
   useCreatePin,
   useGetPin,
@@ -73,7 +94,7 @@ function CreatePinPanel({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#172a3a]/50 backdrop-blur-sm p-0 sm:items-center sm:p-5">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#172a3a]/50 backdrop-blur-sm p-0 sm:items-center sm:p-5">
       <div
         className="max-h-[92dvh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-[#f8f5ea] p-6 shadow-2xl sm:rounded-2xl sm:p-8"
         role="dialog"
@@ -83,13 +104,13 @@ function CreatePinPanel({
         <div className="flex items-start justify-between">
           <div>
             <p className="font-mono-map text-[10px] uppercase tracking-[.18em] text-[#8a6c20]">
-              OpenStreetMap · Boisar, MH
+              OpenStreetMap
             </p>
             <h2 className="mt-2 font-display text-3xl font-bold tracking-[-.05em] text-[#172a3a]">
               Place a pin
             </h2>
             <p className="mt-2 text-sm text-[#60716d]">
-              Pin a landmark, institution, shop, or hazard in Boisar and surrounding Palghar area.
+              Pin a landmark, institution, shop, or location on the map.
             </p>
           </div>
           <button
@@ -237,11 +258,15 @@ function CreatePinPanel({
   );
 }
 
-function PinDetails({ pinId, onClose }: { pinId: number; onClose: () => void }) {
+function BottomPlaceWindow({ pinId, onClose }: { pinId: number; onClose: () => void }) {
   const queryClient = useQueryClient();
   const detail = useGetPin(pinId, { query: { enabled: true, queryKey: getGetPinQueryKey(pinId) } });
   const verify = useVerifyPin();
+  const { toast } = useToast();
   const pin = detail.data;
+
+  const [activeTab, setActiveTab] = useState<'overview' | 'verifications' | 'activity' | 'coordinates' | 'photos'>('overview');
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const cast = (vote: 'confirm' | 'dispute') =>
     verify.mutate(
@@ -250,159 +275,394 @@ function PinDetails({ pinId, onClose }: { pinId: number; onClose: () => void }) 
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetPinQueryKey(pinId) });
           queryClient.invalidateQueries({ queryKey: getListPinsQueryKey() });
+          toast({
+            title: vote === 'confirm' ? 'Place confirmed!' : 'Place disputed',
+            description: 'Your contribution was recorded.',
+          });
         },
       }
     );
 
+  const handleCopyCoords = () => {
+    if (pin) {
+      navigator.clipboard.writeText(`${pin.lat}, ${pin.lng}`);
+      toast({
+        title: 'Coordinates copied',
+        description: `${pin.lat}, ${pin.lng} copied to clipboard`,
+      });
+    }
+  };
+
+  const handleDirections = () => {
+    if (pin) {
+      window.open(`https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`, '_blank');
+    }
+  };
+
+  const handleShare = () => {
+    if (!pin) return;
+    if (navigator.share) {
+      navigator.share({
+        title: `${pin.name} - MapVeri`,
+        text: `Check out ${pin.name} on MapVeri:`,
+        url: window.location.href,
+      }).catch(() => {});
+    } else {
+      handleCopyCoords();
+    }
+  };
+
   return (
-    <aside
-      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-[#d8d8c8] bg-[#f8f5ea] shadow-2xl sm:absolute sm:inset-y-3 sm:right-3 sm:rounded-xl sm:border"
-      data-testid="panel-pin-details"
+    <div
+      className={`absolute inset-x-0 bottom-0 z-30 flex flex-col rounded-t-3xl border-t border-[#c5d0c6] bg-[#fffdf9]/98 shadow-[0_-12px_36px_rgba(23,42,58,0.2)] backdrop-blur-md transition-all duration-300 animate-in slide-in-from-bottom ${
+        isExpanded ? 'h-[78%]' : 'h-[320px]'
+      }`}
+      data-testid="bottom-place-window"
     >
-      <div className="flex items-center justify-between border-b border-[#d8d8c8] px-5 py-4">
-        <span className="font-mono-map text-[10px] uppercase tracking-[.17em] text-[#8a6c20]">
-          OpenStreetMap · Pin Record
-        </span>
-        <button
-          onClick={onClose}
-          className="rounded-lg p-2 text-[#60716d] hover:bg-[#e8e8dc]"
-          aria-label="Close pin details"
-          data-testid="button-close-pin-details"
-        >
-          <X size={18} />
-        </button>
+      {/* Top Drag Handle */}
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex cursor-pointer flex-col items-center pt-2 pb-1 hover:opacity-80 transition"
+      >
+        <span className="h-1.5 w-12 rounded-full bg-[#c9d4ca]" />
       </div>
 
       {detail.isLoading ? (
-        <div className="space-y-4 p-5">
-          <Skeleton className="h-6 w-2/3" />
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-12 w-full" />
+        <div className="space-y-3 p-5">
+          <Skeleton className="h-6 w-1/3" />
+          <Skeleton className="h-16 w-full" />
         </div>
       ) : detail.isError || !pin ? (
         <div className="p-5">
           <ErrorState onRetry={() => detail.refetch()} />
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto p-5">
-          <div className="flex items-center justify-between">
-            <StatusPill status={pin.status} />
-            <span className="font-mono-map text-[11px] text-[#708079]">
-              {Number(pin.lat).toFixed(4)}°N, {Number(pin.lng).toFixed(4)}°E
-            </span>
-          </div>
-
-          <h2
-            className="mt-4 font-display text-2xl font-bold tracking-[-.04em] text-[#172a3a]"
-            data-testid={`text-pin-name-${pin.id}`}
-          >
-            {pin.name}
-          </h2>
-
-          <div className="mt-2 inline-flex items-center gap-1 rounded bg-[#e8ede7] px-2 py-0.5 text-xs font-semibold text-[#2d6b60]">
-            <MapPin size={13} /> {pin.category} · Boisar, Palghar
-          </div>
-
-          <p className="mt-3 text-sm leading-6 text-[#60716d]">
-            {pin.description || 'No description yet. Add context when you know more.'}
-          </p>
-
-          <div className="mt-6 rounded-xl border border-[#d8d8c8] bg-[#f1f1e5] p-4">
-            <div className="flex items-center gap-3">
-              <Avatar name={pin.createdByName} />
-              <div>
-                <p className="text-sm font-bold text-[#243f48]">{pin.createdByName}</p>
-                <div className="mt-1 flex items-center gap-2">
-                  <LevelBadge level={pin.createdByLevel} />
-                  <span className="text-xs text-[#708079]">added {formatDate(pin.createdAt)}</span>
-                </div>
+        <>
+          {/* Header Bar */}
+          <div className="flex items-center justify-between border-b border-[#e2e7e0] px-5 pb-3 pt-1">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2
+                  className="truncate font-display text-lg font-bold text-[#172a3a] sm:text-xl"
+                  data-testid={`text-pin-name-${pin.id}`}
+                >
+                  {pin.name}
+                </h2>
+                <span className="rounded bg-[#e8ede7] px-2 py-0.5 text-[11px] font-bold text-[#2d6b60]">
+                  {pin.category}
+                </span>
+                <StatusPill status={pin.status} />
+                <span className="rounded-full bg-[#f1c744]/25 px-2 py-0.5 font-mono-map text-[10px] font-bold text-[#7a5f13]">
+                  {pin.totalPoints} pts
+                </span>
               </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0 ml-3">
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="flex items-center gap-1 rounded-lg border border-[#d2dbd0] bg-[#f8f5ea] px-2.5 py-1 text-xs font-semibold text-[#3d5e56] hover:bg-[#edf2ea] transition"
+                title={isExpanded ? 'Collapse' : 'Expand'}
+              >
+                {isExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                <span className="hidden sm:inline">{isExpanded ? 'Collapse' : 'Expand'}</span>
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-lg p-1.5 text-[#60716d] hover:bg-[#e8e8dc] transition"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
             </div>
           </div>
 
-          {pin.status !== 'admin_verified' && pin.status !== 'rejected' && (
-            <div className="mt-6 rounded-xl border border-[#cdd9ce] bg-[#eaf1e9] p-4">
-              <div className="flex gap-3">
-                <ShieldCheck className="mt-0.5 shrink-0 text-[#2d6b60]" size={19} />
-                <div>
-                  <p className="text-sm font-bold text-[#205b51]">Are you in Boisar? Verify this place</p>
-                  <p className="mt-1 text-xs leading-5 text-[#53736a]">
-                    Your verification gives confidence to students, workers, and residents.
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button
-                  disabled={verify.isPending}
-                  onClick={() => cast('confirm')}
-                  className="flex items-center justify-center gap-2 rounded-lg bg-[#2d6b60] px-3 py-2.5 text-xs font-bold text-[#f8f5ea] hover:bg-[#20574e] disabled:opacity-50"
-                  data-testid="button-confirm-pin"
-                >
-                  <Check size={15} /> Still here
-                </button>
-                <button
-                  disabled={verify.isPending}
-                  onClick={() => cast('dispute')}
-                  className="flex items-center justify-center gap-2 rounded-lg border border-[#d1a59a] bg-[#fff6f0] px-3 py-2.5 text-xs font-bold text-[#a34635] hover:bg-[#f9e7dd] disabled:opacity-50"
-                  data-testid="button-dispute-pin"
-                >
-                  <ThumbsDown size={15} /> Not here
-                </button>
-              </div>
-              {verify.isSuccess && (
-                <p className="mt-3 text-center text-xs font-bold text-[#2d6b60]" data-testid="status-verification-success">
-                  Your verification was recorded.
+          {/* Navigation Bar / Tabs */}
+          <nav className="flex items-center gap-1 overflow-x-auto border-b border-[#e2e7e0] px-5 py-1 text-xs no-scrollbar bg-[#faf8f0]">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
+                activeTab === 'overview'
+                  ? 'border-[#2d6b60] text-[#2d6b60]'
+                  : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
+              }`}
+            >
+              <Info size={14} />
+              <span>Overview</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('verifications')}
+              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
+                activeTab === 'verifications'
+                  ? 'border-[#2d6b60] text-[#2d6b60]'
+                  : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
+              }`}
+            >
+              <ShieldCheck size={14} />
+              <span>Verifications ({pin.verifications?.length ?? 0})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('activity')}
+              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
+                activeTab === 'activity'
+                  ? 'border-[#2d6b60] text-[#2d6b60]'
+                  : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
+              }`}
+            >
+              <Activity size={14} />
+              <span>Activity</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('coordinates')}
+              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
+                activeTab === 'coordinates'
+                  ? 'border-[#2d6b60] text-[#2d6b60]'
+                  : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
+              }`}
+            >
+              <MapPin size={14} />
+              <span>Coordinates</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('photos')}
+              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
+                activeTab === 'photos'
+                  ? 'border-[#2d6b60] text-[#2d6b60]'
+                  : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
+              }`}
+            >
+              <Camera size={14} />
+              <span>Photos</span>
+            </button>
+          </nav>
+
+          {/* Window Tab Content */}
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            {activeTab === 'overview' && (
+              <div className="space-y-4">
+                <p className="text-sm leading-6 text-[#40544f]">
+                  {pin.description || 'No description provided yet.'}
                 </p>
-              )}
-            </div>
-          )}
 
-          <div className="mt-7">
-            <div className="flex items-center justify-between">
-              <h3 className="font-display text-lg font-bold text-[#172a3a]">Community checks</h3>
-              <span className="font-mono-map text-xs text-[#708079]">{pin.totalPoints} points</span>
-            </div>
-            {pin.verifications.length === 0 ? (
-              <p className="mt-3 text-sm text-[#708079]">No checks yet. You could be the first local to verify.</p>
-            ) : (
-              <div className="mt-3 space-y-3">
-                {pin.verifications.map((v) => (
-                  <div key={v.id} className="flex items-center gap-3 border-b border-[#e2e2d7] pb-3">
-                    <Avatar name={v.voterName} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-bold text-[#243f48]">
-                        {v.voterName} <LevelBadge level={v.voterLevel} />
-                      </p>
-                      <p className="mt-1 text-[11px] text-[#708079]">{formatDate(v.castAt)}</p>
+                {/* Quick Action Buttons */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <button
+                    onClick={handleDirections}
+                    className="flex items-center gap-1.5 rounded-xl bg-[#2d6b60] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#20574e] transition"
+                  >
+                    <Navigation size={14} />
+                    <span>Get Directions</span>
+                  </button>
+                  <button
+                    onClick={handleCopyCoords}
+                    className="flex items-center gap-1.5 rounded-xl border border-[#c4d0c6] bg-white px-3 py-2 text-xs font-semibold text-[#3d5e56] hover:bg-[#edf2ea] transition"
+                  >
+                    <Copy size={13} />
+                    <span>Copy GPS</span>
+                  </button>
+                  <button
+                    onClick={handleShare}
+                    className="flex items-center gap-1.5 rounded-xl border border-[#c4d0c6] bg-white px-3 py-2 text-xs font-semibold text-[#3d5e56] hover:bg-[#edf2ea] transition"
+                  >
+                    <Share2 size={13} />
+                    <span>Share</span>
+                  </button>
+                </div>
+
+                {/* Contributor Card */}
+                <div className="flex items-center justify-between rounded-xl border border-[#dfe4dc] bg-[#f8f6ee] p-3">
+                  <div className="flex items-center gap-3">
+                    <Avatar name={pin.createdByName} size="sm" />
+                    <div>
+                      <p className="text-xs font-bold text-[#172a3a]">{pin.createdByName}</p>
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <LevelBadge level={pin.createdByLevel} />
+                        <span className="text-[11px] text-[#708079]">added {formatDate(pin.createdAt)}</span>
+                      </div>
                     </div>
-                    <span
-                      className={`text-xs font-bold ${
-                        v.vote === 'confirm' ? 'text-[#2d6b60]' : 'text-[#a34635]'
-                      }`}
-                    >
-                      {v.vote === 'confirm' ? '+ confirmed' : '− disputed'}
+                  </div>
+                  <span className="font-mono-map text-xs font-bold text-[#2d6b60]">
+                    {Number(pin.lat).toFixed(4)}°, {Number(pin.lng).toFixed(4)}°
+                  </span>
+                </div>
+
+                {/* Quick Vote Bar */}
+                {pin.status !== 'admin_verified' && pin.status !== 'rejected' && (
+                  <div className="rounded-xl border border-[#cdd9ce] bg-[#eaf1e9] p-3.5">
+                    <p className="text-xs font-bold text-[#205b51]">Community Trust Verification</p>
+                    <p className="mt-0.5 text-[11px] text-[#53736a]">
+                      Does this place exist and is it active? Cast your verification vote.
+                    </p>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        disabled={verify.isPending}
+                        onClick={() => cast('confirm')}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#2d6b60] py-2 text-xs font-bold text-white hover:bg-[#20574e] disabled:opacity-50"
+                      >
+                        <Check size={14} /> Confirm Place
+                      </button>
+                      <button
+                        disabled={verify.isPending}
+                        onClick={() => cast('dispute')}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#d1a59a] bg-[#fff6f0] py-2 text-xs font-bold text-[#a34635] hover:bg-[#f9e7dd] disabled:opacity-50"
+                      >
+                        <ThumbsDown size={14} /> Dispute
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'verifications' && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-[#dfe4dc] bg-[#f8f6ee] p-3.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-[#172a3a]">Community Trust Weight</p>
+                      <p className="text-[11px] text-[#708079]">6+ points unlocks Community Verified</p>
+                    </div>
+                    <span className="font-mono-map text-lg font-bold text-[#2d6b60]">
+                      {pin.totalPoints} pts
                     </span>
+                  </div>
+                  <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-[#e2e7df]">
+                    <div
+                      className="h-full bg-[#2d6b60] transition-all"
+                      style={{ width: `${Math.min(100, (pin.totalPoints / 6) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-[#172a3a]">Recent Checks</p>
+                  {pin.verifications?.length === 0 ? (
+                    <p className="text-xs text-[#708079]">No checks cast yet. Be the first local to verify!</p>
+                  ) : (
+                    pin.verifications?.map((v) => (
+                      <div key={v.id} className="flex items-center justify-between rounded-lg border border-[#e2e7e0] bg-white p-2.5">
+                        <div className="flex items-center gap-2">
+                          <Avatar name={v.voterName} size="sm" />
+                          <div>
+                            <p className="text-xs font-bold text-[#172a3a]">{v.voterName}</p>
+                            <span className="text-[10px] text-[#708079]">{formatDate(v.castAt)}</span>
+                          </div>
+                        </div>
+                        <span
+                          className={`text-xs font-bold ${
+                            v.vote === 'confirm' ? 'text-[#2d6b60]' : 'text-[#a34635]'
+                          }`}
+                        >
+                          {v.vote === 'confirm' ? '+ Confirmed' : '− Disputed'}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'activity' && (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 rounded-lg border border-[#e2e7e0] bg-white p-3">
+                  <span className="mt-0.5 rounded-full bg-[#e2eee4] p-1 text-[#2d6b60]">
+                    <Plus size={14} />
+                  </span>
+                  <div>
+                    <p className="text-xs font-bold text-[#172a3a]">Place Registered</p>
+                    <p className="text-[11px] text-[#708079]">Added by {pin.createdByName} on {formatDate(pin.createdAt)}</p>
+                  </div>
+                </div>
+                {pin.verifications?.map((v) => (
+                  <div key={v.id} className="flex items-start gap-3 rounded-lg border border-[#e2e7e0] bg-white p-3">
+                    <span className={`mt-0.5 rounded-full p-1 ${v.vote === 'confirm' ? 'bg-[#e2eee4] text-[#2d6b60]' : 'bg-[#fbe9e7] text-[#a34635]'}`}>
+                      {v.vote === 'confirm' ? <Check size={14} /> : <ThumbsDown size={14} />}
+                    </span>
+                    <div>
+                      <p className="text-xs font-bold text-[#172a3a]">
+                        Verification Cast: {v.vote === 'confirm' ? 'Confirmed' : 'Disputed'}
+                      </p>
+                      <p className="text-[11px] text-[#708079]">Recorded by {v.voterName} on {formatDate(v.castAt)}</p>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
+
+            {activeTab === 'coordinates' && (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-[#dfe4dc] bg-white p-3.5 space-y-2">
+                  <p className="text-xs font-bold text-[#172a3a]">Geographic Coordinates</p>
+                  <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+                    <div className="rounded-lg bg-[#f8f6ee] p-2">
+                      <span className="block text-[10px] text-[#708079]">Latitude</span>
+                      <span className="font-bold text-[#172a3a]">{pin.lat}</span>
+                    </div>
+                    <div className="rounded-lg bg-[#f8f6ee] p-2">
+                      <span className="block text-[10px] text-[#708079]">Longitude</span>
+                      <span className="font-bold text-[#172a3a]">{pin.lng}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#c4d0c6] bg-white py-2 text-xs font-bold text-[#2d6b60] hover:bg-[#edf2ea] transition"
+                  >
+                    <ExternalLink size={13} />
+                    <span>View on Google Maps</span>
+                  </a>
+                  <a
+                    href={`https://www.openstreetmap.org/?mlat=${pin.lat}&mlon=${pin.lng}#map=16/${pin.lat}/${pin.lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#c4d0c6] bg-white py-2 text-xs font-bold text-[#2d6b60] hover:bg-[#edf2ea] transition"
+                  >
+                    <ExternalLink size={13} />
+                    <span>View on OpenStreetMap</span>
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'photos' && (
+              <div className="space-y-4 py-3 text-center">
+                <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#f1f3ed] text-[#708079]">
+                  <Camera size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-[#172a3a]">No Photos Uploaded Yet</p>
+                  <p className="mt-1 text-[11px] text-[#708079]">
+                    Photos and field observation media will appear here.
+                  </p>
+                </div>
+                <button
+                  onClick={() => toast({ title: 'Photo Upload', description: 'Photo uploads will be linked to community notes.' })}
+                  className="rounded-xl border border-[#c4d0c6] bg-white px-4 py-2 text-xs font-bold text-[#2d6b60] hover:bg-[#edf2ea] transition"
+                >
+                  + Add Photo Note
+                </button>
+              </div>
+            )}
           </div>
-        </div>
+        </>
       )}
-    </aside>
+    </div>
   );
 }
 
-function DesktopMapView({ onSwitchToMobile }: { onSwitchToMobile: () => void }) {
+function DesktopMapView({ onSwitchToMobile }: { onSwitchToMobile?: () => void } = {}) {
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('all');
+  const status = 'all';
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [droppedPin, setDroppedPin] = useState<{ lat: number; lng: number } | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [createCoords, setCreateCoords] = useState<{ lat: string; lng: string }>({
     lat: '19.8055',
     lng: '72.7668',
   });
-  const [nearby, setNearby] = useState(false);
 
   const pinQuery = useListPins(
     { status: status as 'all' | 'unverified' | 'community_verified' | 'admin_verified' | 'rejected' },
@@ -416,20 +676,7 @@ function DesktopMapView({ onSwitchToMobile }: { onSwitchToMobile: () => void }) 
     }
   );
 
-  // Use Boisar center coordinates for nearby query in Maharashtra
-  const nearbyQuery = useListNearbyPins(
-    { lat: BOISAR_CENTER[0], lng: BOISAR_CENTER[1] },
-    {
-      query: {
-        enabled: nearby,
-        queryKey: getListNearbyPinsQueryKey({ lat: BOISAR_CENTER[0], lng: BOISAR_CENTER[1] }),
-        staleTime: 30_000,
-      },
-    }
-  );
-
-  const rawData = nearby ? nearbyQuery.data : pinQuery.data;
-  const pins = (Array.isArray(rawData) ? rawData : []) as (Pin | NearbyPin)[];
+  const pins = (Array.isArray(pinQuery.data) ? pinQuery.data : []) as (Pin | NearbyPin)[];
 
   const filteredPins = useMemo(
     () =>
@@ -439,174 +686,123 @@ function DesktopMapView({ onSwitchToMobile }: { onSwitchToMobile: () => void }) 
     [pins, search]
   );
 
+  // Single click: put a red pin and show its coordinates
   const handleMapClick = (lat: number, lng: number) => {
+    setSelectedId(null);
+    setDroppedPin({ lat, lng });
+    setCreateCoords({ lat: lat.toString(), lng: lng.toString() });
+  };
+
+  // Double click: open Add a Place directly with coordinates pre-filled
+  const handleMapDoubleClick = (lat: number, lng: number) => {
+    setDroppedPin({ lat, lng });
     setCreateCoords({ lat: lat.toString(), lng: lng.toString() });
     setShowCreate(true);
   };
 
+  // Add place from red pin marker action button
+  const handleAddPlaceAtCoords = (lat: number, lng: number) => {
+    setCreateCoords({ lat: lat.toString(), lng: lng.toString() });
+    setShowCreate(true);
+  };
+
+  // Click on existing named location: open the bottom window
+  const handleSelectPin = (id: number) => {
+    setDroppedPin(null);
+    setSelectedId(id);
+  };
+
+  // Listen for pin selection events (e.g. from notification clicks) or query params
+  useEffect(() => {
+    const handleSelectPinEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ id: number }>;
+      if (customEvent.detail?.id) {
+        setSelectedId(customEvent.detail.id);
+        setDroppedPin(null);
+      }
+    };
+    window.addEventListener('mapveri:select-pin', handleSelectPinEvent);
+
+    const params = new URLSearchParams(window.location.search);
+    const pinParam = params.get('pin');
+    if (pinParam) {
+      const parsed = parseInt(pinParam, 10);
+      if (!isNaN(parsed)) {
+        setSelectedId(parsed);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('mapveri:select-pin', handleSelectPinEvent);
+    };
+  }, []);
+
   return (
-    <Shell>
-      <PageTitle
-        eyebrow="OpenStreetMap · Boisar, Palghar (Maharashtra)"
-        title="Live Field Notes: Boisar & Tarapur"
-        description="Community-verified points of interest in Boisar, Betegaon, Theem College, and Tarapur MIDC. Click anywhere on the OSM map or use '+ Add a place' to submit a local record."
-        action={
-          <div className="flex items-center gap-2.5">
-            <SecondaryButton
-              onClick={onSwitchToMobile}
-              testId="button-switch-mobile-view"
-            >
-              <Smartphone size={16} /> Mobile UI
-            </SecondaryButton>
-            <PrimaryButton
-              onClick={() => {
-                setCreateCoords({ lat: '19.8055', lng: '72.7668' });
-                setShowCreate(true);
-              }}
-              testId="button-open-create-pin"
-            >
-              <Plus size={17} /> Add a place
-            </PrimaryButton>
-          </div>
-        }
-      />
-
-      <div className="relative grid flex-1 min-h-[420px] h-[calc(100dvh-130px)] max-h-[calc(100dvh-130px)] overflow-hidden rounded-xl border border-[#c8d1c6] bg-[#dfe6dc] shadow-md lg:grid-cols-[300px_1fr]">
-        {/* Sidebar */}
-        <section className="z-10 flex h-full max-h-full flex-col border-b border-[#c8d1c6] bg-[#f8f5ea]/95 backdrop-blur lg:border-b-0 lg:border-r overflow-hidden">
-          <div className="border-b border-[#d8d8c8] p-2.5 shrink-0">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 text-[#789087]" size={15} />
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search Theem College, station, MIDC…"
-                className="w-full rounded-lg border border-[#c4d0c6] bg-[#fffdf4] py-1.5 pl-8 pr-2.5 text-xs outline-none focus:border-[#2d6b60]"
-                data-testid="input-search-pins"
-              />
-            </div>
-
-            <div className="mt-2 flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-[#49655f]">
-                <SlidersHorizontal size={13} /> Filter
-              </div>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="rounded-md border border-[#d0d8cf] bg-transparent px-2 py-1 text-xs font-bold text-[#49655f] outline-none"
-                data-testid="select-map-status"
+    <Shell
+      headerActions={
+        <PrimaryButton
+          onClick={() => {
+            if (!droppedPin) {
+              setCreateCoords({ lat: '19.8055', lng: '72.7668' });
+            }
+            setShowCreate(true);
+          }}
+          testId="button-open-create-pin"
+        >
+          <Plus size={16} /> Add a place
+        </PrimaryButton>
+      }
+    >
+      <div className="relative flex flex-1 min-h-[420px] h-[calc(100dvh-75px)] max-h-[calc(100dvh-75px)] overflow-hidden rounded-xl border border-[#c8d1c6] bg-[#dfe6dc] shadow-md">
+        {/* Floating semi-transparent search bar on top of the map */}
+        <div
+          className={`absolute left-4 top-4 z-20 flex items-center rounded-xl border border-[#c8d4ca]/80 bg-[#fffdf4]/90 p-1.5 shadow-lg backdrop-blur-md transition-all duration-300 ${
+            showCreate ? 'pointer-events-none opacity-30 blur-[2px]' : 'opacity-100'
+          }`}
+        >
+          <div className="relative flex w-72 sm:w-[380px] items-center">
+            <Search className="absolute left-3 text-[#6f8880]" size={16} />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search places & pins…"
+              className="w-full rounded-lg border-0 bg-transparent py-2 pl-9 pr-8 text-xs sm:text-sm text-[#172a3a] outline-none placeholder:text-[#889d95]"
+              data-testid="input-search-pins"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-2 rounded p-1 text-[#889d95] hover:text-[#172a3a]"
+                aria-label="Clear search"
               >
-                <option value="all">All places ({pins.length})</option>
-                <option value="unverified">Needs check</option>
-                <option value="community_verified">Community verified</option>
-                <option value="admin_verified">Admin verified</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-
-            <button
-              onClick={() => setNearby(!nearby)}
-              className={`mt-2 flex w-full items-center justify-between rounded-lg border px-2.5 py-1.5 text-left text-xs font-bold transition ${
-                nearby
-                  ? 'border-[#2d6b60] bg-[#e3eee6] text-[#205b51]'
-                  : 'border-[#d0d8cf] bg-[#f7f5eb] text-[#60716d] hover:border-[#2d6b60]'
-              }`}
-              data-testid="button-toggle-nearby"
-            >
-              <span className="flex items-center gap-1.5 text-[11px]">
-                <LocateFixed size={14} /> {nearby ? 'Near Boisar (10km)' : 'Boisar region'}
-              </span>
-              <span
-                className={`h-3.5 w-6 rounded-full p-0.5 ${
-                  nearby ? 'bg-[#2d6b60]' : 'bg-[#c3cdc4]'
-                }`}
-              >
-                <span
-                  className={`block h-2.5 w-2.5 rounded-full bg-[#fffdf4] transition ${
-                    nearby ? 'translate-x-2.5' : ''
-                  }`}
-                />
-              </span>
-            </button>
-          </div>
-
-          {/* List of places */}
-          <div className="flex-1 overflow-y-auto p-2">
-            {pinQuery.isLoading || (nearby && nearbyQuery.isLoading) ? (
-              <div className="space-y-2 p-1">
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-16 w-full" />
-              </div>
-            ) : pinQuery.isError || (nearby && nearbyQuery.isError) ? (
-              <ErrorState
-                onRetry={() => {
-                  pinQuery.refetch();
-                  nearbyQuery.refetch();
-                }}
-              />
-            ) : filteredPins.length === 0 ? (
-              <EmptyState
-                title="No matching places in Boisar"
-                description="Try a different search or click anywhere on the OpenStreetMap to add a pin."
-                action={
-                  <SecondaryButton
-                    onClick={() => {
-                      setCreateCoords({ lat: '19.8055', lng: '72.7668' });
-                      setShowCreate(true);
-                    }}
-                    testId="button-empty-add"
-                  >
-                    <Plus size={15} /> Add a place
-                  </SecondaryButton>
-                }
-              />
-            ) : (
-              <div className="space-y-1.5">
-                {filteredPins.map((pin) => (
-                  <button
-                    key={pin.id}
-                    onClick={() => setSelectedId(pin.id)}
-                    className={`block w-full rounded-lg border p-2.5 text-left transition ${
-                      selectedId === pin.id
-                        ? 'border-[#2d6b60] bg-[#e5eee6] shadow-xs'
-                        : 'border-[#e0e1d6] bg-[#fdfbf2] hover:border-[#b5c8bc] hover:bg-[#f3f4e9]'
-                    }`}
-                    data-testid={`card-pin-${pin.id}`}
-                  >
-                    <div className="flex items-start justify-between gap-1.5">
-                      <span className="font-display text-xs font-bold leading-tight text-[#172a3a]">
-                        {pin.name}
-                      </span>
-                      <ArrowUpRight size={13} className="shrink-0 text-[#8ba39a]" />
-                    </div>
-                    <p className="mt-0.5 line-clamp-1 text-[11px] leading-4 text-[#708079]">
-                      {pin.description || 'No description yet.'}
-                    </p>
-                    <div className="mt-2 flex items-center justify-between">
-                      <StatusPill status={pin.status} />
-                      <span className="font-mono-map text-[9px] text-[#708079]">
-                        {'distanceMeters' in pin && formatDistance(pin.distanceMeters)}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                <X size={14} />
+              </button>
             )}
           </div>
-        </section>
+        </div>
 
-        {/* Real OpenStreetMap section */}
+        {/* Real OpenStreetMap section occupying full space */}
         <section className="relative h-full w-full min-h-0 flex-1 overflow-hidden" aria-label="OpenStreetMap Interactive Canvas">
           <OsmMap
             pins={filteredPins}
             selectedId={selectedId}
-            onSelectPin={setSelectedId}
+            onSelectPin={handleSelectPin}
             onMapClick={handleMapClick}
+            onMapDoubleClick={handleMapDoubleClick}
+            droppedPin={droppedPin}
+            onClearDroppedPin={() => setDroppedPin(null)}
+            onAddPlaceAtCoords={handleAddPlaceAtCoords}
+            hideQuickJumps={true}
+            dimOverlays={showCreate}
           />
 
-          {selectedId && <PinDetails pinId={selectedId} onClose={() => setSelectedId(null)} />}
+          {selectedId && (
+            <BottomPlaceWindow
+              pinId={selectedId}
+              onClose={() => setSelectedId(null)}
+            />
+          )}
         </section>
       </div>
 

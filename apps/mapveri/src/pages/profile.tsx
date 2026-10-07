@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link } from 'wouter';
 import {
   MapPin,
@@ -8,9 +7,6 @@ import {
   ArrowRight,
   Plus,
   CheckCircle2,
-  Code2,
-  ChevronDown,
-  ChevronUp,
 } from 'lucide-react';
 import { useGetProfile, getGetProfileQueryKey } from '@workspace/api-client-react';
 import {
@@ -30,7 +26,6 @@ export function ProfilePage() {
   const profile = useGetProfile({ query: { queryKey: getGetProfileQueryKey(), staleTime: 45_000 } });
   const user = profile.data?.user;
   const recentPins = profile.data?.recentPins ?? [];
-  const [showRawOAuth, setShowRawOAuth] = useState(false);
 
   const targetChecks = user?.level === 'C' ? 100 : 250;
   const progressPercent =
@@ -41,16 +36,6 @@ export function ProfilePage() {
         ? 100
         : Math.min(100, Math.round((user.verificationsCast / 250) * 100))
       : Math.min(100, Math.round((user.verificationsCast / targetChecks) * 100));
-
-  // Parse third-party OAuth payload
-  let parsedOAuth: Record<string, any> | null = null;
-  if (user?.oauthData) {
-    try {
-      parsedOAuth = JSON.parse(user.oauthData);
-    } catch {
-      parsedOAuth = { raw: user.oauthData };
-    }
-  }
 
   const isOAuthUser = user?.authProvider && user.authProvider !== 'local';
 
@@ -180,69 +165,7 @@ export function ProfilePage() {
             </div>
           </section>
 
-          {/* Third-Party Verified Data Section */}
-          {isOAuthUser && (
-            <section className="mt-4 rounded-xl border border-[#3c5c6a] bg-[#162734] p-4 text-[#f6f1df] shadow-sm">
-              <div className="flex items-center justify-between border-b border-[#284252] pb-3">
-                <div className="flex items-center gap-2.5">
-                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-[#203a4a] border border-[#3b5969]">
-                    {user.authProvider === 'google' && <GoogleLogo className="h-4 w-4" />}
-                    {user.authProvider === 'zoho' && <ZohoLogo className="h-4 w-4" />}
-                    {user.authProvider === 'outlook' && <OutlookLogo className="h-4 w-4" />}
-                  </span>
-                  <div>
-                    <h3 className="font-display text-sm font-bold text-[#f6f1df]">
-                      Third-Party Verified Data
-                    </h3>
-                    <p className="text-[11px] text-[#8eaaa2]">
-                      Retrieved from {user.authProvider === 'google' ? 'Google' : user.authProvider === 'zoho' ? 'Zoho Mail' : 'Microsoft Outlook'} verification assertion
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowRawOAuth(!showRawOAuth)}
-                  className="flex items-center gap-1 rounded-lg border border-[#3b5969] bg-[#203a4a] px-2.5 py-1 text-xs font-semibold text-[#f1c744] hover:bg-[#28495c] transition"
-                  data-testid="button-toggle-oauth-raw"
-                >
-                  <Code2 size={13} />
-                  {showRawOAuth ? 'Hide JSON' : 'Inspect JSON'}
-                  {showRawOAuth ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                </button>
-              </div>
 
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div className="rounded-lg bg-[#1a2f3e] p-2.5 border border-[#2d4957]">
-                  <span className="text-[10px] uppercase font-mono-map text-[#8eaaa2]">Verified Email</span>
-                  <p className="font-semibold text-white mt-0.5 flex items-center gap-1.5">
-                    <CheckCircle2 size={13} className="text-[#4ade80]" />
-                    {user.email}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-[#1a2f3e] p-2.5 border border-[#2d4957]">
-                  <span className="text-[10px] uppercase font-mono-map text-[#8eaaa2]">Provider User ID</span>
-                  <p className="font-mono text-[11px] text-[#f1c744] truncate mt-0.5">
-                    {user.providerId || parsedOAuth?.providerId || 'N/A'}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-[#1a2f3e] p-2.5 border border-[#2d4957]">
-                  <span className="text-[10px] uppercase font-mono-map text-[#8eaaa2]">Verification Status</span>
-                  <p className="font-semibold text-[#4ade80] mt-0.5">
-                    Active & Authenticated
-                  </p>
-                </div>
-              </div>
-
-              {showRawOAuth && (
-                <div className="mt-3 rounded-lg border border-[#284252] bg-[#0c1820] p-3 text-[11px] font-mono text-[#a9c4ba] overflow-x-auto">
-                  <p className="text-[10px] uppercase font-semibold text-[#f1c744] mb-1.5 font-mono-map">
-                    Raw Third-Party Verification Payload:
-                  </p>
-                  <pre className="whitespace-pre-wrap">{JSON.stringify(parsedOAuth || user, null, 2)}</pre>
-                </div>
-              )}
-            </section>
-          )}
 
           <section className="mt-4">
             <div className="mb-2.5 flex items-end justify-between">

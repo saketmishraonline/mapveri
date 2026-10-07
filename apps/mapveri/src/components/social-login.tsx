@@ -267,32 +267,27 @@ export function SocialLoginTiles({
         </div>
       )}
 
-      {/* Pill Icon Buttons: Google, Zoho, Outlook */}
-      <div className="grid grid-cols-3 gap-3">
-        {(Object.keys(PROVIDERS) as OAuthProvider[]).map((key) => {
-          const provider = PROVIDERS[key];
-          const isLoading = loadingProvider === key;
-
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => handleTileClick(key)}
-              disabled={isLoading}
-              title={`Sign in with ${provider.name}`}
-              aria-label={`Sign in with ${provider.name}`}
-              data-testid={`tile-oauth-${key}`}
-              className="flex h-12 items-center justify-center rounded-full border border-[#3c5c6a] bg-[#1a2f3e]/80 text-[#f6f1df] transition-all duration-150 hover:-translate-y-0.5 hover:border-[#f1c744]/60 hover:bg-[#223d50] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#f1c744]/40 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin text-[#f1c744]" />
-              ) : (
-                provider.logo
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {/* Official Branded "Sign in with Google" Button (Image 1) */}
+      <button
+        type="button"
+        onClick={() => handleTileClick('google')}
+        disabled={loadingProvider === 'google'}
+        title="Sign in with Google"
+        aria-label="Sign in with Google"
+        data-testid="button-signin-google"
+        className="group relative flex h-12 w-full items-center rounded-lg bg-[#4285F4] p-1 text-white shadow-sm transition-all duration-200 hover:bg-[#3367D6] hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+      >
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[6px] bg-white shadow-2xs">
+          {loadingProvider === 'google' ? (
+            <Loader2 className="h-5 w-5 animate-spin text-[#4285F4]" />
+          ) : (
+            <GoogleLogo className="h-5 w-5" />
+          )}
+        </div>
+        <span className="flex-1 text-center font-medium text-sm sm:text-base tracking-wide text-white">
+          {loadingProvider === 'google' ? 'Signing in with Google…' : 'Sign in with Google'}
+        </span>
+      </button>
 
       {/* Third-Party Verification & Data Retrieval Modal */}
       {activeModalProvider && (
@@ -309,6 +304,8 @@ export function SocialLoginTiles({
     </div>
   );
 }
+
+export { SocialLoginTiles as GoogleSignInButton };
 
 // Modal for Third-Party Identity Verification and Data Retrieval
 interface ModalProps {

@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "MapVeri Mobile",
+    "slug": "mapveri-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#172a3a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.mapveri.mobile",
+      "infoPlist": {
+        "NFCReaderUsageDescription": "MapVeri uses NFC to transfer and receive tokens offline when tapping another phone.",
+        "NSBluetoothAlwaysUsageDescription": "MapVeri uses Bluetooth to discover nearby peer devices for offline token trading.",
+        "NSBluetoothPeripheralUsageDescription": "MapVeri advertises token transfer tokens offline to neighboring phones.",
+        "NSCameraUsageDescription": "MapVeri uses your camera to scan offline token exchange QR codes."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#172a3a"
+      },
+      "package": "com.mapveri.mobile",
+      "permissions": [
+        "android.permission.NFC",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_ADVERTISE",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

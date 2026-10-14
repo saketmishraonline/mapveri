@@ -5,7 +5,6 @@
  * MapVeri community map API
  * OpenAPI spec version: 0.1.0
  */
-import type { PinInputCategory } from './pinInputCategory';
 
 export interface PinInput {
   /**
@@ -14,7 +13,11 @@ export interface PinInput {
      */
   name: string;
   description?: string;
-  category: PinInputCategory;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  category: string;
   /**
      * @minimum -90
      * @maximum 90

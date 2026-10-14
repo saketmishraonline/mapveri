@@ -39,7 +39,7 @@ export const RegisterResponse = zod.object({
   "name": zod.string(),
   "username": zod.string().nullish(),
   "email": zod.string(),
-  "role": zod.enum(['user', 'admin']),
+  "role": zod.enum(['user', 'admin', 'organization']),
   "level": zod.enum(['A', 'B', 'C']),
   "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
@@ -61,7 +61,7 @@ export const loginBodyPasswordMin = 6;
 
 
 export const LoginBody = zod.object({
-  "email": zod.string().min(1),
+  "email": zod.string(),
   "password": zod.string().min(loginBodyPasswordMin)
 })
 
@@ -72,7 +72,7 @@ export const LoginResponse = zod.object({
   "name": zod.string(),
   "username": zod.string().nullish(),
   "email": zod.string(),
-  "role": zod.enum(['user', 'admin']),
+  "role": zod.enum(['user', 'admin', 'organization']),
   "level": zod.enum(['A', 'B', 'C']),
   "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
@@ -94,7 +94,7 @@ export const GetMeResponse = zod.object({
   "name": zod.string(),
   "username": zod.string().nullish(),
   "email": zod.string(),
-  "role": zod.enum(['user', 'admin']),
+  "role": zod.enum(['user', 'admin', 'organization']),
   "level": zod.enum(['A', 'B', 'C']),
   "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
@@ -116,7 +116,7 @@ export const GetProfileResponse = zod.object({
   "name": zod.string(),
   "username": zod.string().nullish(),
   "email": zod.string(),
-  "role": zod.enum(['user', 'admin']),
+  "role": zod.enum(['user', 'admin', 'organization']),
   "level": zod.enum(['A', 'B', 'C']),
   "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
@@ -172,6 +172,8 @@ export const ListPinsResponse = zod.array(ListPinsResponseItem)
 export const createPinBodyNameMin = 2;
 export const createPinBodyNameMax = 100;
 
+export const createPinBodyCategoryMax = 100;
+
 export const createPinBodyLatMin = -90;
 export const createPinBodyLatMax = 90;
 
@@ -183,7 +185,7 @@ export const createPinBodyLngMax = 180;
 export const CreatePinBody = zod.object({
   "name": zod.string().min(createPinBodyNameMin).max(createPinBodyNameMax),
   "description": zod.string().optional(),
-  "category": zod.string().min(1).max(100),
+  "category": zod.string().min(1).max(createPinBodyCategoryMax),
   "lat": zod.number().min(createPinBodyLatMin).max(createPinBodyLatMax),
   "lng": zod.number().min(createPinBodyLngMin).max(createPinBodyLngMax)
 })
@@ -379,7 +381,7 @@ export const GetAdminUsersResponseItem = zod.object({
   "name": zod.string(),
   "username": zod.string().nullish(),
   "email": zod.string(),
-  "role": zod.enum(['user', 'admin']),
+  "role": zod.enum(['user', 'admin', 'organization']),
   "level": zod.enum(['A', 'B', 'C']),
   "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
@@ -409,7 +411,7 @@ export const UpdateUserLevelResponse = zod.object({
   "name": zod.string(),
   "username": zod.string().nullish(),
   "email": zod.string(),
-  "role": zod.enum(['user', 'admin']),
+  "role": zod.enum(['user', 'admin', 'organization']),
   "level": zod.enum(['A', 'B', 'C']),
   "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),
@@ -434,7 +436,7 @@ export const ToggleUserBanResponse = zod.object({
   "name": zod.string(),
   "username": zod.string().nullish(),
   "email": zod.string(),
-  "role": zod.enum(['user', 'admin']),
+  "role": zod.enum(['user', 'admin', 'organization']),
   "level": zod.enum(['A', 'B', 'C']),
   "source": zod.string().optional(),
   "pinsCreated": zod.number().int(),

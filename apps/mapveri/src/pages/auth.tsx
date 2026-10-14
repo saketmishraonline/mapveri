@@ -22,10 +22,21 @@ export function LoginPage() {
         onSuccess: (session) => {
           window.localStorage.setItem('mapveri_token', session.token);
           queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
-          setLocation('/map');
+          if (session.user.role === 'organization') {
+            setLocation('/org/fleet');
+          } else if (session.user.role === 'admin') {
+            setLocation('/admin/overview');
+          } else {
+            setLocation('/map');
+          }
         },
       },
     );
+  };
+
+  const setDemoUser = (userIdentifier: string, userPass: string) => {
+    setEmail(userIdentifier);
+    setPassword(userPass);
   };
 
   return (
@@ -41,7 +52,37 @@ export function LoginPage() {
           Pick up where you left off. Your local record is waiting.
         </p>
 
-        <form onSubmit={submit} className="mt-8 space-y-4">
+        {/* Quick Demo Credentials Selection */}
+        <div className="mt-5 rounded-lg border border-[#355064] bg-[#1a3142] p-2.5">
+          <p className="text-[10px] font-mono-map uppercase tracking-wider text-[#8eaaa2] mb-1.5">
+            Quick demo account sign-in:
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setDemoUser('apex_trucking', 'trucking123')}
+              className="rounded bg-[#284252] border border-[#f1c744]/40 px-2 py-1 text-[11px] font-bold text-[#f1c744] hover:bg-[#345265] transition"
+            >
+              🚚 Trucking Org (Apex)
+            </button>
+            <button
+              type="button"
+              onClick={() => setDemoUser('admin', 'admin123')}
+              className="rounded bg-[#284252] border border-[#3c5c6a] px-2 py-1 text-[11px] font-semibold text-[#f6f1df] hover:bg-[#345265] transition"
+            >
+              🛡️ Admin
+            </button>
+            <button
+              type="button"
+              onClick={() => setDemoUser('saket', 'user123')}
+              className="rounded bg-[#284252] border border-[#3c5c6a] px-2 py-1 text-[11px] font-semibold text-[#f6f1df] hover:bg-[#345265] transition"
+            >
+              👤 Contributor
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={submit} className="mt-6 space-y-4">
           <label className="block">
             <span className="mb-2 block text-xs font-semibold text-[#dce7dc]">Username or Email</span>
             <span className="relative block">

@@ -210,8 +210,36 @@ export async function initializeBloomFilterFromDb() {
 export async function seedMapveri() {
   await initializeBloomFilterFromDb();
 
+  // Ensure organization user exists
+  const [existingOrg] = await db
+    .select({ id: userAccountsTable.id })
+    .from(userAccountsTable)
+    .where(or(
+      eq(userAccountsTable.role, "organization"),
+      ilike(userAccountsTable.username, "apex_trucking")
+    ))
+    .limit(1);
+
+  if (!existingOrg) {
+    const orgPasswordHash = await bcrypt.hash("trucking123", 10);
+    const [orgUser] = await db.insert(userAccountsTable).values({
+      name: "Apex Freight Logistics",
+      username: "apex_trucking",
+      email: "fleet@apextrucking.com",
+      passwordHash: orgPasswordHash,
+      role: "organization",
+      level: "A",
+      source: "mapveri",
+      isEmailVerified: true,
+    }).returning();
+    await db.insert(userActivitiesTable).values({ userId: orgUser.id, pinsCreated: 48, verificationsCast: 192 });
+    usernameBloomFilter.add("apex_trucking");
+  } else {
+    usernameBloomFilter.add("apex_trucking");
+  }
+
   const [{ value: existing }] = await db.select({ value: count(userAccountsTable.id) }).from(userAccountsTable);
-  if (Number(existing) > 0) return;
+  if (Number(existing) > 1) return;
 
   const adminPasswordHash = await bcrypt.hash("admin123", 10);
   const userPasswordHash = await bcrypt.hash("user123", 10);

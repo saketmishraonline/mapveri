@@ -22,6 +22,7 @@ const MapPage = lazy(() => import('@/pages/map').then((m) => ({ default: m.MapPa
 const ProfilePage = lazy(() => import('@/pages/profile').then((m) => ({ default: m.ProfilePage })));
 const RewardsPage = lazy(() => import('@/pages/rewards').then((m) => ({ default: m.RewardsPage })));
 const AdminPage = lazy(() => import('@/pages/admin').then((m) => ({ default: m.AdminPage })));
+const OrganizationPage = lazy(() => import('@/pages/organization').then((m) => ({ default: m.OrganizationPage })));
 
 // Persistent high-performance query cache
 const queryClient = new QueryClient({
@@ -49,7 +50,13 @@ function Home() {
 
   useEffect(() => {
     if (token && me.data) {
-      setLocation('/map');
+      if (me.data.role === 'organization') {
+        setLocation('/org/fleet');
+      } else if (me.data.role === 'admin') {
+        setLocation('/admin/overview');
+      } else {
+        setLocation('/map');
+      }
     }
   }, [token, me.data, setLocation]);
 
@@ -152,6 +159,13 @@ function Router() {
         <Route path="/admin/pins"><Protected><AdminPage view="pins" /></Protected></Route>
         <Route path="/admin/users"><Protected><AdminPage view="users" /></Protected></Route>
         <Route path="/admin/map"><Protected><AdminPage view="map" /></Protected></Route>
+        <Route path="/org"><Protected><OrganizationPage view="fleet" /></Protected></Route>
+        <Route path="/org/fleet"><Protected><OrganizationPage view="fleet" /></Protected></Route>
+        <Route path="/org/overview"><Protected><OrganizationPage view="overview" /></Protected></Route>
+        <Route path="/org/routes"><Protected><OrganizationPage view="routes" /></Protected></Route>
+        <Route path="/org/drivers"><Protected><OrganizationPage view="drivers" /></Protected></Route>
+        <Route path="/org/geofences"><Protected><OrganizationPage view="geofences" /></Protected></Route>
+        <Route path="/org/maintenance"><Protected><OrganizationPage view="maintenance" /></Protected></Route>
         <Route component={NotFound} />
       </Switch>
     </RoutedErrorBoundary>

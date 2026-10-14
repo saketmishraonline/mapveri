@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'wouter';
-import { MapPinned, Compass, UserRound, Coins, ShieldCheck, LogOut, Bell, Menu, X, Activity, Layers3 } from 'lucide-react';
+import { MapPinned, Compass, UserRound, Coins, ShieldCheck, LogOut, Bell, Menu, X, Activity, Layers3, Truck, Navigation, Route as RouteIcon, Wrench, Building2, Radio } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useGetMe, getGetMeQueryKey, useListPins, getListPinsQueryKey, type Pin, type NearbyPin } from '@workspace/api-client-react';
 import { PwaInstallButton } from '@/components/pwa-prompt';
@@ -272,6 +272,17 @@ export function UserHeaderControls({ userName }: { userName?: string }) {
                 </p>
                 <p className="text-[11px] text-[#708079]">Tokens & crypto redemption.</p>
               </Link>
+              <Link
+                href="/org/fleet"
+                onClick={() => setMenuOpen(false)}
+                className="block rounded-lg bg-[#f8f5ea] p-2 hover:bg-[#edf3ed] transition border border-[#d6ded4]"
+              >
+                <p className="text-xs font-bold text-[#172a3a] flex items-center justify-between">
+                  <span className="flex items-center gap-1.5"><Truck size={13} className="text-[#2d6b60]" /> Fleet Hub</span>
+                  <span className="font-mono-map text-[9px] bg-[#f1c744] text-[#172a3a] px-1.5 py-0.5 rounded font-bold">Apex Co.</span>
+                </p>
+                <p className="text-[11px] text-[#708079]">Trucking live radar & dispatch console.</p>
+              </Link>
               <button
                 onClick={handleSignOut}
                 className="flex w-full items-center gap-2 rounded-lg p-2 text-xs font-bold text-[#a34635] hover:bg-[#fff0ed] transition border-t border-[#f0f0e8] text-left cursor-pointer"
@@ -288,12 +299,15 @@ export function UserHeaderControls({ userName }: { userName?: string }) {
   );
 }
 
-export function Shell({ children, admin = false, hideBreadcrumb = false, hideHeaderOnDesktop = false, headerActions }: { children: React.ReactNode; admin?: boolean; hideBreadcrumb?: boolean; hideHeaderOnDesktop?: boolean; headerActions?: React.ReactNode }) {
+export function Shell({ children, admin = false, org = false, hideBreadcrumb = false, hideHeaderOnDesktop = false, headerActions }: { children: React.ReactNode; admin?: boolean; org?: boolean; hideBreadcrumb?: boolean; hideHeaderOnDesktop?: boolean; headerActions?: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [mobileOpen, setMobileOpen] = useState(false);
   const me = useGetMe({ query: { enabled: true, queryKey: getGetMeQueryKey(), staleTime: 60_000 } });
   const user = me.data;
+
+  const isOrg = org || location.startsWith('/org') || (!admin && user?.role === 'organization');
+
   const adminItems = [
     { href: '/admin/overview', label: 'Overview', icon: Activity },
     { href: '/admin/queue', label: 'Review queue', icon: ShieldCheck },
@@ -301,13 +315,23 @@ export function Shell({ children, admin = false, hideBreadcrumb = false, hideHea
     { href: '/admin/users', label: 'People', icon: UserRound },
     { href: '/admin/map', label: 'Map layers', icon: Layers3 },
   ];
-  const items = admin ? adminItems : navItems;
+
+  const orgItems = [
+    { href: '/org/fleet', label: 'Fleet Live Radar', icon: Truck },
+    { href: '/org/overview', label: 'Fleet Overview', icon: Activity },
+    { href: '/org/routes', label: 'Active Routes', icon: RouteIcon },
+    { href: '/org/drivers', label: 'Drivers & Crew', icon: UserRound },
+    { href: '/org/geofences', label: 'Hubs & Geofences', icon: MapPinned },
+    { href: '/org/maintenance', label: 'Maintenance', icon: Wrench },
+  ];
+
+  const items = isOrg ? orgItems : admin ? adminItems : navItems;
   return <div className="noise flex min-h-[100dvh] md:h-[100dvh] md:overflow-hidden bg-[#f3f0e5]">
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-[240px] flex-col bg-[#172a3a] px-4 py-4 text-[#f6f1df] transition-transform duration-300 md:static md:translate-x-0 md:h-[100dvh] md:overflow-y-auto ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="flex items-center justify-between"><Logo /><button className="rounded-md p-1 text-[#a9c4ba] md:hidden" onClick={() => setMobileOpen(false)} data-testid="button-close-menu"><X size={20} /></button></div>
       <div className="mt-4 border-b border-[#355064] pb-3">
-        <p className="font-mono-map text-[9px] uppercase tracking-[.18em] text-[#8eaaa2]">{admin ? 'Operations desk' : 'Community map'}</p>
-        <p className="mt-1 text-xs leading-4 text-[#d8e2d9]">{admin ? 'Keep the public map accurate.' : 'Places become reliable when neighbors show up.'}</p>
+        <p className="font-mono-map text-[9px] uppercase tracking-[.18em] text-[#8eaaa2]">{isOrg ? 'Apex Logistics · Fleet Desk' : admin ? 'Operations desk' : 'Community map'}</p>
+        <p className="mt-1 text-xs leading-4 text-[#d8e2d9]">{isOrg ? 'Real-time telemetry, truck radar, and freight corridors.' : admin ? 'Keep the public map accurate.' : 'Places become reliable when neighbors show up.'}</p>
       </div>
       <nav className="mt-3 space-y-1" aria-label="Primary">
         {items.map(({ href, label, icon: Icon }) => {
@@ -334,19 +358,84 @@ export function Shell({ children, admin = false, hideBreadcrumb = false, hideHea
               {href === '/admin/queue' && (
                 <span className="ml-auto rounded-full bg-[#d9533a] px-1.5 py-0.5 text-[10px] text-[#fff8ee]">12</span>
               )}
+              {href === '/org/fleet' && (
+                <span className="ml-auto flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#22c55e] opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#22c55e]"></span>
+                </span>
+              )}
             </Link>
           );
         })}
       </nav>
-      {!admin && user?.role === 'admin' && <div className="mt-4 border-t border-[#355064] pt-3"><p className="mb-1.5 font-mono-map text-[9px] uppercase tracking-[.18em] text-[#8eaaa2]">Admin tools</p><Link href="/admin/overview" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#bdcec5] transition hover:bg-[#284252] hover:text-[#f6f1df]" data-testid="link-admin-tools"><ShieldCheck size={16} />Admin console</Link></div>}
+      {!isOrg && (user?.role === 'organization' || user?.role === 'admin') && (
+        <div className="mt-4 border-t border-[#355064] pt-3">
+          <p className="mb-1.5 font-mono-map text-[9px] uppercase tracking-[.18em] text-[#8eaaa2]">Organization portal</p>
+          <Link
+            href="/org/fleet"
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-[#f1c744] bg-[#284252]/70 hover:bg-[#284252] transition border border-[#f1c744]/30"
+            data-testid="link-org-fleet-sidebar"
+          >
+            <Truck size={14} />
+            <span>Trucking Fleet Hub</span>
+          </Link>
+        </div>
+      )}
+      {isOrg && (
+        <div className="mt-4 border-t border-[#355064] pt-3 space-y-1">
+          <p className="mb-1.5 font-mono-map text-[9px] uppercase tracking-[.18em] text-[#8eaaa2]">Map portals</p>
+          <Link
+            href="/map"
+            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-[#bdcec5] hover:bg-[#284252] hover:text-[#f6f1df] transition"
+          >
+            <Compass size={14} />
+            <span>Community Map</span>
+          </Link>
+          {user?.role === 'admin' && (
+            <Link
+              href="/admin/overview"
+              className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-[#bdcec5] hover:bg-[#284252] hover:text-[#f6f1df] transition"
+            >
+              <ShieldCheck size={14} />
+              <span>Admin Console</span>
+            </Link>
+          )}
+        </div>
+      )}
+      {!admin && !isOrg && user?.role === 'admin' && (
+        <div className="mt-2 border-t border-[#355064] pt-2">
+          <p className="mb-1.5 font-mono-map text-[9px] uppercase tracking-[.18em] text-[#8eaaa2]">Admin tools</p>
+          <Link
+            href="/admin/overview"
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#bdcec5] transition hover:bg-[#284252] hover:text-[#f6f1df]"
+            data-testid="link-admin-tools"
+          >
+            <ShieldCheck size={16} />Admin console
+          </Link>
+        </div>
+      )}
       <div className="mt-auto space-y-3 pt-3">
-        <div className="flex items-center gap-2.5 border-t border-[#355064] pt-3"><Avatar name={user?.name} size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-[#edf3e8]" data-testid="text-current-user">{user?.name ?? 'Loading profile'}</p><p className="text-[10px] text-[#91aaa0]">{user ? `Level ${user.level} contributor` : 'Community member'}</p></div><button onClick={async () => { await signOutUser(); queryClient.clear(); setLocation('/login'); }} className="text-[#8eaaa0] transition hover:text-[#f1c744]" aria-label="Sign out" data-testid="button-sign-out"><LogOut size={15} /></button></div>
+        <div className="flex items-center gap-2.5 border-t border-[#355064] pt-3">
+          <Avatar name={user?.name} size="sm" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-bold text-[#edf3e8]" data-testid="text-current-user">
+              {user?.name ?? 'Loading profile'}
+            </p>
+            <p className="text-[10px] text-[#91aaa0]">
+              {user?.role === 'organization' ? 'Apex Fleet Carrier' : user ? `Level ${user.level} contributor` : 'Community member'}
+            </p>
+          </div>
+          <button onClick={async () => { await signOutUser(); queryClient.clear(); setLocation('/login'); }} className="text-[#8eaaa0] transition hover:text-[#f1c744]" aria-label="Sign out" data-testid="button-sign-out"><LogOut size={15} /></button>
+        </div>
       </div>
     </aside>
     {mobileOpen && <button className="fixed inset-0 z-30 bg-[#172a3a]/45 md:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation" data-testid="button-overlay-close" />}
     <main className="min-w-0 flex-1 flex flex-col md:h-[100dvh] md:overflow-hidden">
       <header className={`sticky top-0 z-40 flex h-[52px] shrink-0 items-center justify-between border-b border-[#d8d8c8] bg-[#f3f0e5]/95 px-4 backdrop-blur md:px-6 ${hideHeaderOnDesktop ? 'md:hidden' : ''}`}>
-        <div className="flex items-center gap-3"><button className="rounded-lg p-1.5 text-[#2d6b60] hover:bg-[#e4e8dc] md:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation" data-testid="button-open-menu"><Menu size={20} /></button>{!hideBreadcrumb && <span className="font-mono-map text-[10px] uppercase tracking-[.15em] text-[#708079]">{admin ? 'MapVeri / Admin' : 'MapVeri / Field notes'}</span>}</div>
+        <div className="flex items-center gap-3">
+          <button className="rounded-lg p-1.5 text-[#2d6b60] hover:bg-[#e4e8dc] md:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation" data-testid="button-open-menu"><Menu size={20} /></button>
+          {!hideBreadcrumb && <span className="font-mono-map text-[10px] uppercase tracking-[.15em] text-[#708079]">{isOrg ? 'Apex Logistics / Fleet Operations' : admin ? 'MapVeri / Admin' : 'MapVeri / Field notes'}</span>}
+        </div>
         <div className="flex items-center gap-2.5">{headerActions}<PwaInstallButton /><UserHeaderControls userName={user?.name} /></div>
       </header>
       <div className="flex-1 p-3 md:p-4 flex flex-col min-h-0 overflow-y-auto">{children}</div>

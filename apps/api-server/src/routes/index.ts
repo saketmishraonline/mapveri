@@ -3,6 +3,7 @@ import healthRouter from "./health";
 import mapveriRouter from "./mapveri";
 import oauthRouter from "./oauth";
 import rewardsRouter from "./rewards";
+import organizationRouter from "./organization";
 
 const router: IRouter = Router();
 
@@ -10,5 +11,6 @@ router.use(healthRouter);
 router.use(mapveriRouter);
 router.use(oauthRouter);
 router.use(rewardsRouter);
+router.use(organizationRouter);
 
 export default router;

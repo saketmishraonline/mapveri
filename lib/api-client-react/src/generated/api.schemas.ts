@@ -20,6 +20,7 @@ export type UserRole = typeof UserRole[keyof typeof UserRole];
 export const UserRole = {
   user: 'user',
   admin: 'admin',
+  organization: 'organization',
 } as const;
 
 export type UserLevel = typeof UserLevel[keyof typeof UserLevel];
@@ -75,18 +76,6 @@ export interface LoginInput {
   password: string;
 }
 
-export type PinInputCategory = string;
-
-
-export const PinInputCategory = {
-  Restaurant: 'Restaurant',
-  Shop: 'Shop',
-  Landmark: 'Landmark',
-  Road_Issue: 'Road Issue',
-  Hazard: 'Hazard',
-  Other: 'Other',
-} as const;
-
 export interface PinInput {
   /**
      * @minLength 2
@@ -94,7 +83,11 @@ export interface PinInput {
      */
   name: string;
   description?: string;
-  category: PinInputCategory;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  category: string;
   /**
      * @minimum -90
      * @maximum 90

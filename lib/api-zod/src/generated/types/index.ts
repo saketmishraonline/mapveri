@@ -25,7 +25,6 @@ export * from './pin';
 export * from './pinCreatedByLevel';
 export * from './pinDetail';
 export * from './pinInput';
-export * from './pinInputCategory';
 export * from './pinStatus';
 export * from './profile';
 export * from './registerInput';

@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Plus,
   CheckCircle2,
+  Truck,
 } from 'lucide-react';
 import { useGetProfile, getGetProfileQueryKey } from '@workspace/api-client-react';
 import {
@@ -99,6 +100,11 @@ export function ProfilePage() {
                           <OutlookLogo className="h-3 w-3" /> Microsoft Outlook
                         </span>
                       )}
+                      {user.role === 'organization' && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-[#f1c744] text-[#172a3a] px-2 py-0.5 text-[10px] font-bold shadow-2xs">
+                          <Truck size={12} /> Trucking Organization
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -161,6 +167,26 @@ export function ProfilePage() {
                 <p className="mt-2 text-xs leading-5 text-[#53736a]">
                   Add what you know first-hand. Dispute gently. Return when a place changes.
                 </p>
+              </div>
+
+              <div className="rounded-xl border border-[#d6ded4] bg-[#f8f5ea] p-3.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#172a3a] text-[#f1c744]">
+                      <Truck size={16} />
+                    </span>
+                    <div>
+                      <p className="font-display text-sm font-bold text-[#172a3a]">Trucking Fleet Hub</p>
+                      <p className="text-[11px] text-[#708079]">Live telematics & corridor radar</p>
+                    </div>
+                  </div>
+                  <Link
+                    href="/org/fleet"
+                    className="inline-flex items-center gap-1 rounded-lg bg-[#2d6b60] px-2.5 py-1.5 text-xs font-bold text-[#f8f4e7] hover:bg-[#20574e] transition"
+                  >
+                    Open Hub &rarr;
+                  </Link>
+                </div>
               </div>
             </div>
           </section>

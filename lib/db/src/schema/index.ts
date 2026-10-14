@@ -20,3 +20,4 @@
 export * from "./users";
 export * from "./pins";
 export * from "./verifications";
+export * from "./redemptions";

@@ -183,7 +183,7 @@ export const createPinBodyLngMax = 180;
 export const CreatePinBody = zod.object({
   "name": zod.string().min(createPinBodyNameMin).max(createPinBodyNameMax),
   "description": zod.string().optional(),
-  "category": zod.enum(['Restaurant', 'Shop', 'Landmark', 'Road Issue', 'Hazard', 'Other']),
+  "category": zod.string().min(1).max(100),
   "lat": zod.number().min(createPinBodyLatMin).max(createPinBodyLatMax),
   "lng": zod.number().min(createPinBodyLngMin).max(createPinBodyLngMax)
 })

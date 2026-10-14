@@ -426,7 +426,8 @@ components:
         description: { type: string }
         category:
           type: string
-          enum: [Restaurant, Shop, Landmark, "Road Issue", Hazard, Other]
+          minLength: 1
+          maxLength: 100
         lat: { type: number, minimum: -90, maximum: 90 }
         lng: { type: number, minimum: -180, maximum: 180 }
       required: [name, category, lat, lng]

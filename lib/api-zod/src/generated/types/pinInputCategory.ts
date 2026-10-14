@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type PinInputCategory = typeof PinInputCategory[keyof typeof PinInputCategory];
+export type PinInputCategory = string;
 
 
 export const PinInputCategory = {

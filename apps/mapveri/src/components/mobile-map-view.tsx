@@ -27,6 +27,10 @@ import {
   Train,
   CheckCircle2,
   AlertCircle,
+  Mountain,
+  Globe,
+  Sparkles,
+  Box,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { signOutUser } from '@/lib/supabase';
@@ -63,6 +67,8 @@ import {
 } from '@/components/osm-map';
 import { type LocationTracker, type TrackingStatus, type GpsLocationData } from '@/lib/location-tracker';
 import { useToast } from '@/hooks/use-toast';
+import { CategoryCombobox } from '@/components/category-combobox';
+import { Cesium3DGlobe } from './cesium-3d-globe';
 
 interface MobileMapViewProps {
   onSwitchToDesktop?: () => void;
@@ -87,7 +93,9 @@ export function MobileMapView({ onSwitchToDesktop }: MobileMapViewProps) {
   const [activeTab, setActiveTab] = useState<'explore' | 'places' | 'contribute' | 'profile'>('explore');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showLayersModal, setShowLayersModal] = useState(false);
-  const [activeLayer, setActiveLayer] = useState<TileLayerKey>('osm');
+  const [showCesiumModal, setShowCesiumModal] = useState(false);
+  const [is3dActive, setIs3dActive] = useState(false);
+  const [activeLayer, setActiveLayer] = useState<TileLayerKey>('mapveri');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createCoords, setCreateCoords] = useState<{ lat: string; lng: string }>({
     lat: '19.8055',
@@ -418,7 +426,7 @@ export function MobileMapView({ onSwitchToDesktop }: MobileMapViewProps) {
             onClick={() => setShowLayersModal(true)}
             className="grid h-11 w-11 place-items-center rounded-full border border-[#c7d5c9] bg-[#fffdf9] text-[#243f48] shadow-[0_3px_10px_rgba(0,0,0,0.16)] backdrop-blur active:scale-90 transition"
             aria-label="Map Layers"
-            title="Tile Layers (OSM, Satellite, Humanitarian)"
+            title="Tile Layers (OSM, Satellite, HOT, OpenTopo, Natural Earth)"
           >
             <Layers size={19} />
           </button>
@@ -596,31 +604,78 @@ export function MobileMapView({ onSwitchToDesktop }: MobileMapViewProps) {
               </button>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-3">
-              {Object.entries(TILE_LAYERS).map(([key, config]) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    setActiveLayer(key as TileLayerKey);
-                    setShowLayersModal(false);
-                  }}
-                  className={`flex flex-col items-center rounded-2xl border p-3 text-center transition active:scale-95 ${
-                    activeLayer === key
-                      ? 'border-[#2d6b60] bg-[#e7f0ea] ring-2 ring-[#2d6b60]'
-                      : 'border-[#d8ded7] bg-[#f8f6ee] hover:bg-[#f1efe6]'
-                  }`}
-                >
-                  <div className={`grid h-10 w-10 place-items-center rounded-xl mb-2 ${activeLayer === key ? 'bg-[#2d6b60] text-white' : 'bg-[#e2e8df] text-[#243f48]'}`}>
-                    <Layers size={18} />
-                  </div>
-                  <span className="text-xs font-bold leading-tight text-[#172a3a]">
-                    {key === 'osm' ? 'Default OSM' : key === 'satellite' ? 'Satellite' : 'HOT Street'}
-                  </span>
-                  {activeLayer === key && (
-                    <span className="mt-1 text-[10px] font-bold text-[#2d6b60]">Active</span>
-                  )}
-                </button>
-              ))}
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[60vh] overflow-y-auto pr-1">
+              {Object.entries(TILE_LAYERS).map(([key, config]) => {
+                const LayerIcon =
+                  key === 'mapveri'
+                    ? Sparkles
+                    : key === 'osm'
+                    ? Globe
+                    : key === 'satellite'
+                    ? Layers
+                    : Mountain;
+
+                return (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      setActiveLayer(key as TileLayerKey);
+                      setShowLayersModal(false);
+                    }}
+                    className={`flex flex-col items-center rounded-2xl border p-3 text-center transition active:scale-95 ${
+                      activeLayer === key
+                        ? 'border-[#2d6b60] bg-[#e7f0ea] ring-2 ring-[#2d6b60]'
+                        : 'border-[#d8ded7] bg-[#f8f6ee] hover:bg-[#f1efe6]'
+                    }`}
+                  >
+                    <div
+                      className={`grid h-10 w-10 place-items-center rounded-xl mb-2 ${
+                        activeLayer === key
+                          ? 'bg-[#2d6b60] text-white'
+                          : key === 'mapveri'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-[#e2e8df] text-[#243f48]'
+                      }`}
+                    >
+                      <LayerIcon size={18} />
+                    </div>
+                    <span className="text-xs font-bold leading-tight text-[#172a3a]">
+                      {config.shortName}
+                    </span>
+                    <span className="mt-0.5 text-[10px] text-[#708079] leading-tight line-clamp-1">
+                      {key === 'mapveri'
+                        ? 'India Maps, Carto 40%, Topo & 3D'
+                        : key === 'opentopo'
+                        ? 'Topography & Relief'
+                        : key === 'satellite'
+                        ? 'Aerial Satellite'
+                        : 'Standard Street'}
+                    </span>
+                    {key === 'mapveri' && (
+                      <span className="mt-1 rounded bg-amber-400/20 px-1 py-0.2 text-[8px] font-bold text-amber-800 border border-amber-400/30">
+                        COMPOSITE
+                      </span>
+                    )}
+                    {activeLayer === key && (
+                      <span className="mt-1 text-[10px] font-bold text-[#2d6b60]">Active</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick Launch Cesium 3D Globe */}
+            <div className="mt-4 pt-3 border-t border-[#e2e8df]">
+              <button
+                onClick={() => {
+                  setShowLayersModal(false);
+                  setShowCesiumModal(true);
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-4 py-3 text-xs font-bold text-white shadow-md active:scale-98 transition"
+              >
+                <Globe size={16} />
+                <span>Launch CesiumJS 3D Globe (DEM + 3D Tiles)</span>
+              </button>
             </div>
           </div>
         </div>
@@ -634,6 +689,15 @@ export function MobileMapView({ onSwitchToDesktop }: MobileMapViewProps) {
           onClose={() => setShowCreateModal(false)}
         />
       )}
+
+      {/* 11. CESIUM 3D GLOBE MODAL */}
+      <Cesium3DGlobe
+        isOpen={showCesiumModal}
+        onClose={() => setShowCesiumModal(false)}
+        pins={pins}
+        selectedPinId={selectedId}
+        onSelectPin={handleSelectPin}
+      />
     </div>
   );
 }
@@ -1334,22 +1398,17 @@ function MobileCreatePinModal({
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs font-bold text-[#243f48]">
-              Category
-              <select
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-bold text-[#243f48] mb-1">
+                Category / Institution
+              </label>
+              <CategoryCombobox
                 value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className="mt-1.5 w-full rounded-xl border border-[#c4d2c7] bg-[#f8f6ee] px-3 py-2.5 text-sm text-[#172a3a] outline-none focus:border-[#2d6b60]"
-                data-testid="select-pin-category"
-              >
-                {Object.values(PinInputCategory).map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onChange={(cat) => setForm({ ...form, category: cat })}
+                testId="select-pin-category"
+              />
+            </div>
 
             <div>
               <span className="block text-xs font-bold text-[#243f48]">Coordinates</span>

@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'wouter';
-import { MapPinned, Compass, UserRound, ShieldCheck, LogOut, Bell, Menu, X, Activity, Layers3 } from 'lucide-react';
+import { MapPinned, Compass, UserRound, Coins, ShieldCheck, LogOut, Bell, Menu, X, Activity, Layers3 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useGetMe, getGetMeQueryKey, useListPins, type Pin, type NearbyPin } from '@workspace/api-client-react';
+import { useGetMe, getGetMeQueryKey, useListPins, getListPinsQueryKey, type Pin, type NearbyPin } from '@workspace/api-client-react';
 import { PwaInstallButton } from '@/components/pwa-prompt';
 import { signOutUser } from '@/lib/supabase';
 
@@ -95,6 +95,7 @@ export function EmptyState({ title, description, action }: { title: string; desc
 const navItems = [
   { href: '/map', label: 'Map workspace', icon: Compass },
   { href: '/profile', label: 'My contributions', icon: UserRound },
+  { href: '/rewards', label: 'My rewards', icon: Coins },
 ];
 
 export function UserHeaderControls({ userName }: { userName?: string }) {
@@ -106,7 +107,12 @@ export function UserHeaderControls({ userName }: { userName?: string }) {
 
   const unverifiedQuery = useListPins(
     { status: 'unverified' },
-    { query: { staleTime: 30_000 } }
+    {
+      query: {
+        queryKey: getListPinsQueryKey({ status: 'unverified' }),
+        staleTime: 30_000,
+      },
+    }
   );
   const unverifiedPins = (Array.isArray(unverifiedQuery.data) ? unverifiedQuery.data : []) as (Pin | NearbyPin)[];
 
@@ -255,6 +261,17 @@ export function UserHeaderControls({ userName }: { userName?: string }) {
                 <p className="text-xs font-bold text-[#2d6b60]">My Profile</p>
                 <p className="text-[11px] text-[#708079]">View contributions and standing.</p>
               </Link>
+              <Link
+                href="/rewards"
+                onClick={() => setMenuOpen(false)}
+                className="block rounded-lg bg-[#f8f5ea] p-2 hover:bg-[#edf3ed] transition"
+              >
+                <p className="text-xs font-bold text-[#2d6b60] flex items-center justify-between">
+                  <span>My Rewards</span>
+                  <span className="font-mono-map text-[10px] text-[#806414]">10x / 1x</span>
+                </p>
+                <p className="text-[11px] text-[#708079]">Tokens & crypto redemption.</p>
+              </Link>
               <button
                 onClick={handleSignOut}
                 className="flex w-full items-center gap-2 rounded-lg p-2 text-xs font-bold text-[#a34635] hover:bg-[#fff0ed] transition border-t border-[#f0f0e8] text-left cursor-pointer"
@@ -293,7 +310,33 @@ export function Shell({ children, admin = false, hideBreadcrumb = false, hideHea
         <p className="mt-1 text-xs leading-4 text-[#d8e2d9]">{admin ? 'Keep the public map accurate.' : 'Places become reliable when neighbors show up.'}</p>
       </div>
       <nav className="mt-3 space-y-1" aria-label="Primary">
-        {items.map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setMobileOpen(false)} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${location === href ? 'bg-[#f1c744] text-[#172a3a]' : 'text-[#bdcec5] hover:bg-[#284252] hover:text-[#f6f1df]'}`} data-testid={`link-nav-${label.toLowerCase().replaceAll(' ', '-')}`}><Icon size={16} /><span>{label}</span>{href === '/admin/queue' && <span className="ml-auto rounded-full bg-[#d9533a] px-1.5 py-0.5 text-[10px] text-[#fff8ee]">12</span>}</Link>)}
+        {items.map(({ href, label, icon: Icon }) => {
+          const userRewardTokens = ((user?.pinsCreated ?? 0) * 10) + ((user?.verificationsCast ?? 0) * 1);
+          return (
+            <Link
+              key={href}
+              href={href}
+              onClick={() => setMobileOpen(false)}
+              className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                location === href ? 'bg-[#f1c744] text-[#172a3a]' : 'text-[#bdcec5] hover:bg-[#284252] hover:text-[#f6f1df]'
+              }`}
+              data-testid={`link-nav-${label.toLowerCase().replaceAll(' ', '-')}`}
+            >
+              <Icon size={16} />
+              <span>{label}</span>
+              {href === '/rewards' && (
+                <span className={`ml-auto inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-mono-map font-bold ${
+                  location === href ? 'bg-[#172a3a] text-[#f1c744]' : 'bg-[#f1c744]/20 border border-[#f1c744]/30 text-[#f1c744]'
+                }`}>
+                  🪙 {userRewardTokens}
+                </span>
+              )}
+              {href === '/admin/queue' && (
+                <span className="ml-auto rounded-full bg-[#d9533a] px-1.5 py-0.5 text-[10px] text-[#fff8ee]">12</span>
+              )}
+            </Link>
+          );
+        })}
       </nav>
       {!admin && user?.role === 'admin' && <div className="mt-4 border-t border-[#355064] pt-3"><p className="mb-1.5 font-mono-map text-[9px] uppercase tracking-[.18em] text-[#8eaaa2]">Admin tools</p><Link href="/admin/overview" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#bdcec5] transition hover:bg-[#284252] hover:text-[#f6f1df]" data-testid="link-admin-tools"><ShieldCheck size={16} />Admin console</Link></div>}
       <div className="mt-auto space-y-3 pt-3">

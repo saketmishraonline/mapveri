@@ -75,7 +75,7 @@ export interface LoginInput {
   password: string;
 }
 
-export type PinInputCategory = typeof PinInputCategory[keyof typeof PinInputCategory];
+export type PinInputCategory = string;
 
 
 export const PinInputCategory = {

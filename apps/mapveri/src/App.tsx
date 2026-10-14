@@ -20,6 +20,7 @@ import {
 // Lazy-load heavy pages so LoginPage loads instantaneously
 const MapPage = lazy(() => import('@/pages/map').then((m) => ({ default: m.MapPage })));
 const ProfilePage = lazy(() => import('@/pages/profile').then((m) => ({ default: m.ProfilePage })));
+const RewardsPage = lazy(() => import('@/pages/rewards').then((m) => ({ default: m.RewardsPage })));
 const AdminPage = lazy(() => import('@/pages/admin').then((m) => ({ default: m.AdminPage })));
 
 // Persistent high-performance query cache
@@ -144,6 +145,7 @@ function Router() {
         <Route path="/register" component={RegisterPage} />
         <Route path="/map"><Protected><MapPage /></Protected></Route>
         <Route path="/profile"><Protected><ProfilePage /></Protected></Route>
+        <Route path="/rewards"><Protected><RewardsPage /></Protected></Route>
         <Route path="/admin"><Protected><AdminPage /></Protected></Route>
         <Route path="/admin/overview"><Protected><AdminPage view="overview" /></Protected></Route>
         <Route path="/admin/queue"><Protected><AdminPage view="queue" /></Protected></Route>

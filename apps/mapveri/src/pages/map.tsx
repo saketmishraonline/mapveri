@@ -51,6 +51,7 @@ import {
   formatDistance,
 } from '@/components/shared';
 import { OsmMap, BOISAR_CENTER, THEEM_COLLEGE } from '@/components/osm-map';
+import { CategoryCombobox } from '@/components/category-combobox';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { MobileMapView } from '@/components/mobile-map-view';
 
@@ -198,19 +199,16 @@ function CreatePinPanel({
           </label>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block text-sm font-bold text-[#243f48]">
-              Category
-              <select
+            <div>
+              <label className="block text-sm font-bold text-[#243f48] mb-1">
+                Category / Institution
+              </label>
+              <CategoryCombobox
                 value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className="mt-2 w-full rounded-lg border border-[#c5d0c6] bg-[#fffdf4] px-3 py-3 text-sm outline-none focus:border-[#2d6b60]"
-                data-testid="select-pin-category"
-              >
-                {Object.values(PinInputCategory).map((category) => (
-                  <option key={category}>{category}</option>
-                ))}
-              </select>
-            </label>
+                onChange={(cat) => setForm({ ...form, category: cat })}
+                testId="select-pin-category"
+              />
+            </div>
 
             <div>
               <span className="block text-sm font-bold text-[#243f48]">GPS Coordinates (IN)</span>
@@ -306,7 +304,7 @@ function BottomPlaceWindow({ pinId, onClose }: { pinId: number; onClose: () => v
         title: `${pin.name} - MapVeri`,
         text: `Check out ${pin.name} on MapVeri:`,
         url: window.location.href,
-      }).catch(() => {});
+      }).catch(() => { });
     } else {
       handleCopyCoords();
     }
@@ -314,9 +312,8 @@ function BottomPlaceWindow({ pinId, onClose }: { pinId: number; onClose: () => v
 
   return (
     <div
-      className={`absolute inset-x-0 bottom-0 z-30 flex flex-col rounded-t-3xl border-t border-[#c5d0c6] bg-[#fffdf9]/98 shadow-[0_-12px_36px_rgba(23,42,58,0.2)] backdrop-blur-md transition-all duration-300 animate-in slide-in-from-bottom ${
-        isExpanded ? 'h-[78%]' : 'h-[320px]'
-      }`}
+      className={`absolute inset-x-0 bottom-0 z-30 flex flex-col rounded-t-3xl border-t border-[#c5d0c6] bg-[#fffdf9]/98 shadow-[0_-12px_36px_rgba(23,42,58,0.2)] backdrop-blur-md transition-all duration-300 animate-in slide-in-from-bottom ${isExpanded ? 'h-[78%]' : 'h-[320px]'
+        }`}
       data-testid="bottom-place-window"
     >
       {/* Top Drag Handle */}
@@ -381,55 +378,50 @@ function BottomPlaceWindow({ pinId, onClose }: { pinId: number; onClose: () => v
           <nav className="flex items-center gap-1 overflow-x-auto border-b border-[#e2e7e0] px-5 py-1 text-xs no-scrollbar bg-[#faf8f0]">
             <button
               onClick={() => setActiveTab('overview')}
-              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
-                activeTab === 'overview'
+              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${activeTab === 'overview'
                   ? 'border-[#2d6b60] text-[#2d6b60]'
                   : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
-              }`}
+                }`}
             >
               <Info size={14} />
               <span>Overview</span>
             </button>
             <button
               onClick={() => setActiveTab('verifications')}
-              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
-                activeTab === 'verifications'
+              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${activeTab === 'verifications'
                   ? 'border-[#2d6b60] text-[#2d6b60]'
                   : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
-              }`}
+                }`}
             >
               <ShieldCheck size={14} />
               <span>Verifications ({pin.verifications?.length ?? 0})</span>
             </button>
             <button
               onClick={() => setActiveTab('activity')}
-              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
-                activeTab === 'activity'
+              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${activeTab === 'activity'
                   ? 'border-[#2d6b60] text-[#2d6b60]'
                   : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
-              }`}
+                }`}
             >
               <Activity size={14} />
               <span>Activity</span>
             </button>
             <button
               onClick={() => setActiveTab('coordinates')}
-              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
-                activeTab === 'coordinates'
+              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${activeTab === 'coordinates'
                   ? 'border-[#2d6b60] text-[#2d6b60]'
                   : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
-              }`}
+                }`}
             >
               <MapPin size={14} />
               <span>Coordinates</span>
             </button>
             <button
               onClick={() => setActiveTab('photos')}
-              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
-                activeTab === 'photos'
+              className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${activeTab === 'photos'
                   ? 'border-[#2d6b60] text-[#2d6b60]'
                   : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
-              }`}
+                }`}
             >
               <Camera size={14} />
               <span>Photos</span>
@@ -549,9 +541,8 @@ function BottomPlaceWindow({ pinId, onClose }: { pinId: number; onClose: () => v
                           </div>
                         </div>
                         <span
-                          className={`text-xs font-bold ${
-                            v.vote === 'confirm' ? 'text-[#2d6b60]' : 'text-[#a34635]'
-                          }`}
+                          className={`text-xs font-bold ${v.vote === 'confirm' ? 'text-[#2d6b60]' : 'text-[#a34635]'
+                            }`}
                         >
                           {v.vote === 'confirm' ? '+ Confirmed' : '− Disputed'}
                         </span>
@@ -756,9 +747,8 @@ function DesktopMapView({ onSwitchToMobile }: { onSwitchToMobile?: () => void } 
       <div className="relative flex flex-1 min-h-[420px] h-[calc(100dvh-75px)] max-h-[calc(100dvh-75px)] overflow-hidden rounded-xl border border-[#c8d1c6] bg-[#dfe6dc] shadow-md">
         {/* Floating semi-transparent search bar on top of the map */}
         <div
-          className={`absolute left-4 top-4 z-20 flex items-center rounded-xl border border-[#c8d4ca]/80 bg-[#fffdf4]/90 p-1.5 shadow-lg backdrop-blur-md transition-all duration-300 ${
-            showCreate ? 'pointer-events-none opacity-30 blur-[2px]' : 'opacity-100'
-          }`}
+          className={`absolute left-4 top-4 z-20 flex items-center rounded-xl border border-[#c8d4ca]/80 bg-[#fffdf4]/90 p-1.5 shadow-lg backdrop-blur-md transition-all duration-300 ${showCreate ? 'pointer-events-none opacity-30 blur-[2px]' : 'opacity-100'
+            }`}
         >
           <div className="relative flex w-72 sm:w-[380px] items-center">
             <Search className="absolute left-3 text-[#6f8880]" size={16} />

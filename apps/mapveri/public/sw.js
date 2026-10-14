@@ -111,11 +111,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Map Tiles (OpenStreetMap, Humanitarian, Esri Satellite)
+  // 2. Map Tiles (OpenStreetMap, Humanitarian, Esri Satellite, OpenTopoMap, Natural Earth)
   if (
     url.hostname.includes('tile.openstreetmap.org') ||
     url.hostname.includes('tile.openstreetmap.fr') ||
-    url.hostname.includes('arcgisonline.com')
+    url.hostname.includes('arcgisonline.com') ||
+    url.hostname.includes('opentopomap.org')
   ) {
     event.respondWith(
       caches.open(CACHE_NAME_TILES).then(async (cache) => {

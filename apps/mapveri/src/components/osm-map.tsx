@@ -1,10 +1,34 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Layers, Compass, Locate, LocateFixed, LocateOff, Loader2, X, ShieldAlert, Globe, ArrowRight, Laptop } from 'lucide-react';
+import {
+  Layers,
+  Compass,
+  Locate,
+  LocateFixed,
+  LocateOff,
+  Loader2,
+  X,
+  ShieldAlert,
+  Globe,
+  ArrowRight,
+  Laptop,
+  Mountain,
+  Sparkles,
+  Box,
+  Building2,
+  Eye,
+} from 'lucide-react';
 import type { Pin, NearbyPin } from '@workspace/api-client-react';
 import { LocationTracker, type GpsLocationData, type TrackingStatus } from '@/lib/location-tracker';
 import { toast } from '@/hooks/use-toast';
+import { ThreeCityGmlLayer, type CityGmlRenderMode } from '@/lib/three-citygml-layer';
+import { BOISAR_OSM_BUILDINGS_GEOJSON } from '@/lib/osm-3d-buildings-data';
+import { Cesium3DGlobe } from './cesium-3d-globe';
+import {
+  INDIA_MAPS_URLS,
+  getNearestKeyDistrict,
+} from '@/lib/india-maps-data';
 
 // Boisar, Maharashtra central coordinates: [lat, lng]
 export const BOISAR_CENTER: [number, number] = [19.8036, 72.7615];
@@ -31,18 +55,32 @@ export interface OsmMapProps {
 }
 
 export const TILE_LAYERS = {
+  mapveri: {
+    name: 'Mapveri Map',
+    shortName: 'Mapveri Map',
+    description: 'Composite OSM + CARTO (40%), India Civic Maps (760 Districts), Elevation, Contours & Ski Trails',
+    attribution: '&copy; OpenStreetMap, &copy; CARTO, India Maps Data (udit-001), OpenTopoMap, Waymarked Trails, Esri Hillshade, OpenRailwayMap',
+    maxZoom: 19,
+    isCustom: true,
+  },
   osm: {
     name: 'OpenStreetMap (Standard)',
+    shortName: 'Default OSM',
+    description: 'Clean standard street map',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
     maxZoom: 19,
   },
-  humanitarian: {
-    name: 'OSM Humanitarian (HOT)',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors, Tiles style by <a href="https://www.hotosm.org/" target="_blank" rel="noreferrer">HOT</a>',
-    maxZoom: 19,
+  opentopo: {
+    name: 'OpenTopoMap (Topographic)',
+    shortName: 'OpenTopo',
+    description: 'Contour lines, elevation & hiking trails',
+    attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org" target="_blank" rel="noreferrer">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org" target="_blank" rel="noreferrer">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">CC-BY-SA</a>)',
+    maxZoom: 17,
   },
   satellite: {
     name: 'Esri Satellite Imagery',
+    shortName: 'Esri Satellite',
+    description: 'High-resolution aerial satellite imagery',
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
     maxZoom: 18,
   },
@@ -51,6 +89,380 @@ export const TILE_LAYERS = {
 export type TileLayerKey = keyof typeof TILE_LAYERS;
 
 export function getMapLibreStyle(layerKey: TileLayerKey): maplibregl.StyleSpecification {
+  if (layerKey === 'mapveri') {
+    return {
+      version: 8,
+      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+      sources: {
+        // Foundation OSM standard raster base
+        'osm-tiles': {
+          type: 'raster',
+          tiles: [
+            'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          ],
+          tileSize: 256,
+          attribution: '&copy; OpenStreetMap contributors',
+          maxzoom: 19,
+        },
+        // Graphical 1: 3D Elevation Hillshade (Esri World Elevation)
+        'elevation-hillshade': {
+          type: 'raster',
+          tiles: [
+            'https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
+          ],
+          tileSize: 256,
+          attribution: 'Elevation Hillshade &copy; Esri, USGS, SRTM',
+          maxzoom: 14,
+        },
+        // Graphical 2: OpenTopoMap Contours & Topography (SRTM 10m/50m elevation contours)
+        'opentopo-tiles': {
+          type: 'raster',
+          tiles: [
+            'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+            'https://b.tile.opentopomap.org/{z}/{x}/{y}.png',
+            'https://c.tile.opentopomap.org/{z}/{x}/{y}.png',
+          ],
+          tileSize: 256,
+          attribution: 'Topography &copy; OpenTopoMap (CC-BY-SA), SRTM',
+          maxzoom: 17,
+        },
+        // Graphical 3: Skiing Pistes & Lifts (openmaptiles-skiing & Waymarked Slopes)
+        'skiing-slopes': {
+          type: 'raster',
+          tiles: [
+            'https://tile.waymarkedtrails.org/slopes/{z}/{x}/{y}.png',
+          ],
+          tileSize: 256,
+          attribution: 'Ski Slopes &copy; waymarkedtrails.org (openmaptiles-skiing)',
+          maxzoom: 18,
+        },
+        // Graphical 4: OpenSnowMap Pistes & Nordic routes
+        'opensnow-pistes': {
+          type: 'raster',
+          tiles: [
+            'https://tiles.opensnowmap.org/pistes/{z}/{x}/{y}.png',
+          ],
+          tileSize: 256,
+          attribution: 'Pistes &copy; opensnowmap.org',
+          maxzoom: 18,
+        },
+        // Graphical 5: Hiking Trails & Alpine Paths (Waymarked Trails)
+        'hiking-trails': {
+          type: 'raster',
+          tiles: [
+            'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
+          ],
+          tileSize: 256,
+          attribution: 'Hiking Trails &copy; waymarkedtrails.org',
+          maxzoom: 18,
+        },
+        // Graphical 6: Cycling & Mountain Biking Routes (Waymarked Trails)
+        'cycling-routes': {
+          type: 'raster',
+          tiles: [
+            'https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png',
+          ],
+          tileSize: 256,
+          attribution: 'Cycling Trails &copy; waymarkedtrails.org',
+          maxzoom: 18,
+        },
+        // Graphical 7: Railway & Transit Infrastructure (OpenRailwayMap)
+        'railway-network': {
+          type: 'raster',
+          tiles: [
+            'https://a.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
+            'https://b.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
+            'https://c.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
+          ],
+          tileSize: 256,
+          attribution: 'Railway Data &copy; OpenRailwayMap',
+          maxzoom: 19,
+        },
+        // Useful Cartographic Data & Information from CARTO Voyager (with API key to avoid watermark)
+        'carto-voyager': {
+          type: 'raster',
+          tiles: [
+            'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_4eux_1_93c14281b06aa44f9bf79593',
+            'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_4eux_1_93c14281b06aa44f9bf79593',
+            'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_4eux_1_93c14281b06aa44f9bf79593',
+            'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_4eux_1_93c14281b06aa44f9bf79593',
+          ],
+          tileSize: 256,
+          attribution: '&copy; OpenStreetMap contributors, &copy; CARTO',
+          maxzoom: 20,
+        },
+        // 3D Digital Elevation Model (DEM) Terrarium terrain tiles
+        'terrain-dem': {
+          type: 'raster-dem',
+          tiles: [
+            'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
+          ],
+          encoding: 'terrarium',
+          tileSize: 256,
+          maxzoom: 15,
+        },
+        // OpenStreetMap 3D Building Footprints GeoJSON Source
+        'osm-3d-buildings-source': {
+          type: 'geojson',
+          data: BOISAR_OSM_BUILDINGS_GEOJSON as any,
+        },
+        // India Maps Data: 760 Administrative District Boundaries (udit-001/india-maps-data)
+        'india-districts-source': {
+          type: 'geojson',
+          data: INDIA_MAPS_URLS.indiaDistrictsLocal,
+        },
+        // India Maps Data: District Centroids for Fast Labels
+        'india-centroids-source': {
+          type: 'geojson',
+          data: INDIA_MAPS_URLS.districtCentroidsLocal,
+        },
+        // India Maps Data: State Centroids for Macro Labels
+        'india-states-source': {
+          type: 'geojson',
+          data: INDIA_MAPS_URLS.stateCentroidsLocal,
+        },
+      },
+      layers: [
+        // Foundation OSM base
+        {
+          id: 'mapveri-osm-base',
+          type: 'raster',
+          source: 'osm-tiles',
+          minzoom: 0,
+          maxzoom: 20,
+          paint: {
+            'raster-opacity': 1.0,
+          },
+        },
+        // Useful Cartographic Data & Information from Carto at 40% transparency (0.40 opacity)
+        {
+          id: 'mapveri-carto-data',
+          type: 'raster',
+          source: 'carto-voyager',
+          minzoom: 0,
+          maxzoom: 20,
+          paint: {
+            'raster-opacity': 0.40,
+          },
+        },
+        // Graphical 1: 3D Elevation Hillshade at 45% opacity
+        {
+          id: 'mapveri-elevation-hillshade',
+          type: 'raster',
+          source: 'elevation-hillshade',
+          minzoom: 0,
+          maxzoom: 15,
+          paint: {
+            'raster-opacity': 0.45,
+          },
+        },
+        // Graphical 2: OpenTopo Contours & Topography at 45% opacity
+        {
+          id: 'mapveri-opentopo-contours',
+          type: 'raster',
+          source: 'opentopo-tiles',
+          minzoom: 7,
+          maxzoom: 17,
+          paint: {
+            'raster-opacity': 0.45,
+          },
+        },
+        // Graphical 3: Ski Pistes & Slopes (openmaptiles-skiing) at 48% opacity
+        {
+          id: 'mapveri-skiing-slopes',
+          type: 'raster',
+          source: 'skiing-slopes',
+          minzoom: 0,
+          maxzoom: 19,
+          paint: {
+            'raster-opacity': 0.48,
+          },
+        },
+        // Graphical 4: OpenSnowMap Pistes at 42% opacity
+        {
+          id: 'mapveri-opensnow-pistes',
+          type: 'raster',
+          source: 'opensnow-pistes',
+          minzoom: 9,
+          maxzoom: 19,
+          paint: {
+            'raster-opacity': 0.42,
+          },
+        },
+        // Graphical 5: Hiking Trails at 45% opacity
+        {
+          id: 'mapveri-hiking-trails',
+          type: 'raster',
+          source: 'hiking-trails',
+          minzoom: 6,
+          maxzoom: 19,
+          paint: {
+            'raster-opacity': 0.45,
+          },
+        },
+        // Graphical 6: Cycling Routes at 45% opacity
+        {
+          id: 'mapveri-cycling-routes',
+          type: 'raster',
+          source: 'cycling-routes',
+          minzoom: 7,
+          maxzoom: 19,
+          paint: {
+            'raster-opacity': 0.45,
+          },
+        },
+        // Graphical 7: Railway Network at 45% opacity
+        {
+          id: 'mapveri-railway-network',
+          type: 'raster',
+          source: 'railway-network',
+          minzoom: 5,
+          maxzoom: 20,
+          paint: {
+            'raster-opacity': 0.45,
+          },
+        },
+        // India Maps Data: Subtle District Fill & Hover Highlight
+        {
+          id: 'mapveri-india-district-fill',
+          type: 'fill',
+          source: 'india-districts-source',
+          minzoom: 3,
+          maxzoom: 20,
+          paint: {
+            'fill-color': '#0284c7',
+            'fill-opacity': 0.04,
+          },
+        },
+        // India Maps Data: District Boundary Casing for High Contrast
+        {
+          id: 'mapveri-india-district-casing',
+          type: 'line',
+          source: 'india-districts-source',
+          minzoom: 3,
+          maxzoom: 20,
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              4, 1.2,
+              8, 2.2,
+              12, 3.2,
+              15, 4.2,
+            ],
+            'line-opacity': 0.55,
+          },
+        },
+        // India Maps Data: Crisp Administrative Boundaries (760 Districts)
+        {
+          id: 'mapveri-india-district-borders',
+          type: 'line',
+          source: 'india-districts-source',
+          minzoom: 3,
+          maxzoom: 20,
+          paint: {
+            'line-color': '#1d4ed8',
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              4, 0.7,
+              8, 1.4,
+              12, 2.0,
+              15, 2.8,
+            ],
+            'line-opacity': 0.75,
+            'line-dasharray': [3, 2],
+          },
+        },
+        // India Maps Data: District Names (Centroids)
+        {
+          id: 'mapveri-india-district-labels',
+          type: 'symbol',
+          source: 'india-centroids-source',
+          minzoom: 6,
+          maxzoom: 17,
+          layout: {
+            'text-field': ['get', 'district'],
+            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+            'text-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              6, 9,
+              9, 12,
+              12, 14,
+              15, 16,
+            ],
+            'text-letter-spacing': 0.06,
+            'text-transform': 'uppercase',
+            'text-allow-overlap': false,
+            'text-ignore-placement': false,
+          },
+          paint: {
+            'text-color': '#1e293b',
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 2.0,
+            'text-halo-blur': 0.5,
+          },
+        },
+        // India Maps Data: State Names for macro country view
+        {
+          id: 'mapveri-india-state-labels',
+          type: 'symbol',
+          source: 'india-states-source',
+          minzoom: 3,
+          maxzoom: 8,
+          layout: {
+            'text-field': ['get', 'name'],
+            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+            'text-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              4, 11,
+              6, 14,
+              8, 17,
+            ],
+            'text-letter-spacing': 0.1,
+            'text-transform': 'uppercase',
+            'text-allow-overlap': false,
+          },
+          paint: {
+            'text-color': '#1e3a8a',
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 2.5,
+            'text-halo-blur': 1,
+          },
+        },
+        // OpenStreetMap 3D Extruded Building Footprints (3D Polygons)
+        {
+          id: 'mapveri-osm-3d-buildings',
+          type: 'fill-extrusion',
+          source: 'osm-3d-buildings-source',
+          minzoom: 12,
+          paint: {
+            'fill-extrusion-color': [
+              'interpolate',
+              ['linear'],
+              ['get', 'height'],
+              0, '#cbd5e1',
+              15, '#93c5fd',
+              25, '#38bdf8',
+              40, '#2563eb',
+            ],
+            'fill-extrusion-height': ['get', 'height'],
+            'fill-extrusion-base': ['get', 'min_height'],
+            'fill-extrusion-opacity': 0.88,
+          },
+        },
+      ],
+    };
+  }
   if (layerKey === 'satellite') {
     return {
       version: 8,
@@ -71,34 +483,35 @@ export function getMapLibreStyle(layerKey: TileLayerKey): maplibregl.StyleSpecif
           type: 'raster',
           source: 'satellite-tiles',
           minzoom: 0,
-          maxzoom: 18,
+          maxzoom: 19,
         },
       ],
     };
   }
 
-  if (layerKey === 'humanitarian') {
+  if (layerKey === 'opentopo') {
     return {
       version: 8,
       sources: {
-        'hot-tiles': {
+        'opentopo-tiles': {
           type: 'raster',
           tiles: [
-            'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
-            'https://b.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+            'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+            'https://b.tile.opentopomap.org/{z}/{x}/{y}.png',
+            'https://c.tile.opentopomap.org/{z}/{x}/{y}.png',
           ],
           tileSize: 256,
-          attribution: '&copy; OpenStreetMap contributors, Tiles style by HOT',
-          maxzoom: 19,
+          attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)',
+          maxzoom: 17,
         },
       },
       layers: [
         {
-          id: 'hot-tiles-layer',
+          id: 'opentopo-tiles-layer',
           type: 'raster',
-          source: 'hot-tiles',
+          source: 'opentopo-tiles',
           minzoom: 0,
-          maxzoom: 19,
+          maxzoom: 17,
         },
       ],
     };
@@ -177,12 +590,91 @@ export function OsmMap({
     message: '',
   });
 
-  const [internalActiveLayer, setInternalActiveLayer] = useState<TileLayerKey>('osm');
+  const [internalActiveLayer, setInternalActiveLayer] = useState<TileLayerKey>('mapveri');
   const activeLayer = externalActiveLayer ?? internalActiveLayer;
 
   const setActiveLayer = (layer: TileLayerKey) => {
     setInternalActiveLayer(layer);
     onLayerChange?.(layer);
+  };
+
+  const [is3dMode, setIs3dMode] = useState(false);
+  const [showCesiumModal, setShowCesiumModal] = useState(false);
+  const [threeMode, setThreeMode] = useState<CityGmlRenderMode>('realistic');
+  const [isTerrainActive, setIsTerrainActive] = useState(false);
+  const threeLayerRef = useRef<ThreeCityGmlLayer | null>(null);
+
+  const handleToggle3D = () => {
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+    const nextState = !is3dMode;
+    setIs3dMode(nextState);
+
+    if (nextState) {
+      if (activeLayer !== 'mapveri') {
+        setActiveLayer('mapveri');
+      }
+
+      map.easeTo({
+        pitch: 60,
+        bearing: -18,
+        duration: 1200,
+      });
+
+      try {
+        if (map.getSource('terrain-dem')) {
+          map.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 });
+          setIsTerrainActive(true);
+        }
+      } catch (err) {
+        console.warn('SetTerrain error:', err);
+      }
+
+      try {
+        if (!map.getLayer('threejs-citygml-layer')) {
+          const layer = new ThreeCityGmlLayer(threeMode);
+          map.addLayer(layer);
+          threeLayerRef.current = layer;
+        }
+      } catch (err) {
+        console.warn('Three.js layer add notice:', err);
+      }
+
+      toast({
+        title: '3D Perspective & Terrain Active',
+        description: '60° oblique pitch, Terrarium DEM elevation mesh & Three.js CityGML models engaged.',
+      });
+    } else {
+      map.easeTo({
+        pitch: 0,
+        bearing: 0,
+        duration: 800,
+      });
+
+      try {
+        map.setTerrain(null);
+        setIsTerrainActive(false);
+      } catch { }
+
+      try {
+        if (map.getLayer('threejs-citygml-layer')) {
+          map.removeLayer('threejs-citygml-layer');
+          threeLayerRef.current = null;
+        }
+      } catch { }
+    }
+  };
+
+  const handleCycleThreeMode = () => {
+    const modes: CityGmlRenderMode[] = ['realistic', 'semantic', 'height', 'wireframe'];
+    const nextIdx = (modes.indexOf(threeMode) + 1) % modes.length;
+    const nextMode = modes[nextIdx];
+    setThreeMode(nextMode);
+    threeLayerRef.current?.setRenderMode(nextMode);
+    toast({
+      title: 'CityGML Mode Updated',
+      description: `Switched Three.js architectural styling to: ${nextMode.toUpperCase()}`,
+    });
   };
 
   const [showLayerMenu, setShowLayerMenu] = useState(false);
@@ -191,6 +683,13 @@ export function OsmMap({
     lng: BOISAR_CENTER[1],
   });
   const [zoomLevel, setZoomLevel] = useState(14);
+  const [hoveredDistrict, setHoveredDistrict] = useState<{
+    district: string;
+    st_nm: string;
+    dt_code: string;
+  } | null>(null);
+
+  const activeDistrictInfo = getNearestKeyDistrict(currentCoords.lat, currentCoords.lng);
 
   // Initialize MapLibre GL Map
   useEffect(() => {
@@ -242,8 +741,8 @@ export function OsmMap({
           description: isSecureErr
             ? 'Chrome requires http://localhost or HTTPS for GPS.'
             : isDeniedErr
-            ? 'Location permission denied. Click the help guide on screen.'
-            : msg,
+              ? 'Location permission denied. Click the help guide on screen.'
+              : msg,
           variant: 'destructive',
         });
       },
@@ -259,11 +758,59 @@ export function OsmMap({
       setZoomLevel(Math.round(map.getZoom()));
     });
 
+    // District hover and click handling for India Maps Data (760 Districts)
+    map.on('mousemove', (e: maplibregl.MapMouseEvent) => {
+      try {
+        if (!map.getLayer('mapveri-india-district-fill')) {
+          map.getCanvas().style.cursor = '';
+          return;
+        }
+        const features = map.queryRenderedFeatures(e.point, { layers: ['mapveri-india-district-fill'] });
+        if (features && features.length > 0) {
+          map.getCanvas().style.cursor = 'pointer';
+          const props = features[0].properties as any;
+          if (props?.district) {
+            setHoveredDistrict({
+              district: props.district,
+              st_nm: props.st_nm || 'India',
+              dt_code: props.dt_code || '',
+            });
+          }
+        } else {
+          map.getCanvas().style.cursor = '';
+          setHoveredDistrict(null);
+        }
+      } catch {
+        map.getCanvas().style.cursor = '';
+      }
+    });
+
+    map.on('mouseout', () => {
+      map.getCanvas().style.cursor = '';
+      setHoveredDistrict(null);
+    });
+
     let clickTimer: any = null;
 
     map.on('click', (e: maplibregl.MapMouseEvent) => {
       const lat = Number(e.lngLat.lat.toFixed(6));
       const lng = Number(e.lngLat.lng.toFixed(6));
+
+      try {
+        if (map.getLayer('mapveri-india-district-fill')) {
+          const features = map.queryRenderedFeatures(e.point, { layers: ['mapveri-india-district-fill'] });
+          if (features && features.length > 0) {
+            const props = features[0].properties as any;
+            if (props?.district) {
+              toast({
+                title: `🇮🇳 ${props.district} District`,
+                description: `State: ${props.st_nm || 'India'} · Administrative Code: ${props.dt_code || 'N/A'} (India Maps Data)`,
+              });
+            }
+          }
+        }
+      } catch { }
+
       if (onMapDoubleClickRef.current) {
         if (clickTimer) clearTimeout(clickTimer);
         clickTimer = setTimeout(() => {
@@ -305,7 +852,23 @@ export function OsmMap({
   useEffect(() => {
     if (!mapRef.current) return;
     mapRef.current.setStyle(getMapLibreStyle(activeLayer));
-  }, [activeLayer]);
+
+    if (is3dMode && activeLayer === 'mapveri') {
+      mapRef.current.once('style.load', () => {
+        try {
+          if (mapRef.current?.getSource('terrain-dem')) {
+            mapRef.current.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 });
+            setIsTerrainActive(true);
+          }
+          if (!mapRef.current?.getLayer('threejs-citygml-layer')) {
+            const layer = new ThreeCityGmlLayer(threeMode);
+            mapRef.current?.addLayer(layer);
+            threeLayerRef.current = layer;
+          }
+        } catch { }
+      });
+    }
+  }, [activeLayer, is3dMode, threeMode]);
 
   // Update Markers
   useEffect(() => {
@@ -321,10 +884,10 @@ export function OsmMap({
         pin.status === 'admin_verified'
           ? '#2d6b60'
           : pin.status === 'community_verified'
-          ? '#dba91a'
-          : pin.status === 'rejected'
-          ? '#7b7772'
-          : '#d9533a';
+            ? '#dba91a'
+            : pin.status === 'rejected'
+              ? '#7b7772'
+              : '#d9533a';
 
       const el = document.createElement('div');
       el.className = 'maplibre-pin-anchor';
@@ -664,33 +1227,75 @@ export function OsmMap({
               <button
                 onClick={() => setShowLayerMenu(!showLayerMenu)}
                 className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#c4d0c6] bg-[#fffdf4] text-[#243f48] shadow-md hover:bg-[#f2efe4] transition"
-                title="Map Layers (OSM / Satellite)"
+                title="Map Layers (OSM / Satellite / HOT / OpenTopo / Natural Earth)"
               >
                 <Layers size={17} />
               </button>
 
               {showLayerMenu && (
-                <div className="absolute right-0 top-11 w-52 rounded-xl border border-[#c5d0c6] bg-[#fffdf4] p-2 shadow-xl">
+                <div className="absolute right-0 top-11 w-64 rounded-xl border border-[#c5d0c6] bg-[#fffdf4] p-2 shadow-xl animate-in fade-in zoom-in-95">
                   <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#708079]">
-                    Tile Layers
+                    Select Base Map Layer
                   </p>
-                  {Object.entries(TILE_LAYERS).map(([key, config]) => (
-                    <button
-                      key={key}
-                      onClick={() => {
-                        setActiveLayer(key as TileLayerKey);
-                        setShowLayerMenu(false);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold transition ${
-                        activeLayer === key
-                          ? 'bg-[#2d6b60] text-[#fff8ee]'
-                          : 'text-[#243f48] hover:bg-[#f0ebe0]'
-                      }`}
-                    >
-                      <span>{config.name}</span>
-                      {activeLayer === key && <span className="text-[10px]">✓</span>}
-                    </button>
-                  ))}
+                  <div className="space-y-1">
+                    {Object.entries(TILE_LAYERS).map(([key, config]) => {
+                      const LayerIcon =
+                        key === 'mapveri'
+                          ? Sparkles
+                          : key === 'osm'
+                            ? Globe
+                            : key === 'satellite'
+                              ? Layers
+                              : Mountain;
+
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            setActiveLayer(key as TileLayerKey);
+                            setShowLayerMenu(false);
+                          }}
+                          className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${activeLayer === key
+                              ? 'bg-[#2d6b60] text-[#fff8ee]'
+                              : 'text-[#243f48] hover:bg-[#f0ebe0]'
+                            }`}
+                        >
+                          <span
+                            className={`grid h-7 w-7 shrink-0 place-items-center rounded-md ${activeLayer === key
+                                ? 'bg-[#1f4a43] text-[#fff8ee]'
+                                : key === 'mapveri'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-[#e7ece5] text-[#243f48]'
+                              }`}
+                          >
+                            <LayerIcon size={14} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-semibold leading-tight flex items-center gap-1.5">
+                              <span>{config.name}</span>
+                              {key === 'mapveri' && (
+                                <span className={`rounded px-1 py-0.2 text-[8px] font-bold uppercase tracking-wider ${activeLayer === key
+                                    ? 'bg-[#1f4a43] text-amber-300 border border-amber-300/40'
+                                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  }`}>
+                                  Featured
+                                </span>
+                              )}
+                            </div>
+                            <div
+                              className={`text-[10px] leading-tight truncate ${activeLayer === key ? 'text-[#d3e5df]' : 'text-[#708079]'
+                                }`}
+                            >
+                              {config.description}
+                            </div>
+                          </div>
+                          {activeLayer === key && (
+                            <span className="text-xs font-bold text-[#fff8ee]">✓</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -698,27 +1303,26 @@ export function OsmMap({
             {/* Locate Me Button with Real-Time Device GPS Tracking */}
             <button
               onClick={handleLocateMe}
-              className={`relative flex h-9 w-9 items-center justify-center rounded-lg border shadow-md transition ${
-                trackingStatus === 'tracking' && isFollowing
+              className={`relative flex h-9 w-9 items-center justify-center rounded-lg border shadow-md transition ${trackingStatus === 'tracking' && isFollowing
                   ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-[0_0_14px_rgba(37,99,235,0.45)]'
                   : trackingStatus === 'tracking' && !isFollowing
-                  ? 'border-[#2563eb] bg-[#eff6ff] text-[#2563eb] hover:bg-[#dbeafe]'
-                  : trackingStatus === 'locating'
-                  ? 'border-[#3b82f6] bg-[#eff6ff] text-[#2563eb]'
-                  : trackingStatus === 'error'
-                  ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
-                  : 'border-[#c4d0c6] bg-[#fffdf4] text-[#243f48] hover:bg-[#f2efe4]'
-              }`}
+                    ? 'border-[#2563eb] bg-[#eff6ff] text-[#2563eb] hover:bg-[#dbeafe]'
+                    : trackingStatus === 'locating'
+                      ? 'border-[#3b82f6] bg-[#eff6ff] text-[#2563eb]'
+                      : trackingStatus === 'error'
+                        ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
+                        : 'border-[#c4d0c6] bg-[#fffdf4] text-[#243f48] hover:bg-[#f2efe4]'
+                }`}
               title={
                 trackingStatus === 'tracking' && isFollowing
                   ? 'Live GPS Tracking Active (Click to pause)'
                   : trackingStatus === 'tracking' && !isFollowing
-                  ? 'Re-center camera on GPS location'
-                  : trackingStatus === 'locating'
-                  ? 'Acquiring GPS signal...'
-                  : trackingStatus === 'error'
-                  ? 'GPS error (Click to retry)'
-                  : 'Track My Location (Device GPS)'
+                    ? 'Re-center camera on GPS location'
+                    : trackingStatus === 'locating'
+                      ? 'Acquiring GPS signal...'
+                      : trackingStatus === 'error'
+                        ? 'GPS error (Click to retry)'
+                        : 'Track My Location (Device GPS)'
               }
               aria-label="Track My Location"
             >
@@ -770,7 +1374,21 @@ export function OsmMap({
               <span className="flex h-2 w-2 rounded-full bg-[#2d6b60]" />
               {!hideQuickJumps && (
                 <>
-                  <span className="font-bold text-[#1f4a43]">Boisar, Maharashtra (IN)</span>
+                  <span className="font-bold text-[#1f4a43] flex items-center gap-1">
+                    <span>🇮🇳</span>
+                    <span>
+                      {hoveredDistrict
+                        ? `${hoveredDistrict.district}, ${hoveredDistrict.st_nm} (IN)`
+                        : activeDistrictInfo
+                          ? `${activeDistrictInfo.district}, ${activeDistrictInfo.state} (IN)`
+                          : 'Boisar, Maharashtra (IN)'}
+                    </span>
+                    {hoveredDistrict?.dt_code && (
+                      <span className="rounded bg-sky-100 px-1 text-[9px] font-normal text-sky-800">
+                        #{hoveredDistrict.dt_code}
+                      </span>
+                    )}
+                  </span>
                   <span className="text-[#8c9c94]">·</span>
                 </>
               )}
@@ -781,19 +1399,6 @@ export function OsmMap({
               <span className="text-[10px] text-[#708079]">Zoom {zoomLevel}</span>
             </div>
 
-            {/* Right: OpenStreetMap Attribution */}
-            <div className="pointer-events-auto rounded border border-[#c8d4c9] bg-[#f8f5ea]/90 px-2 py-0.5 text-[10px] text-[#60716d] shadow-sm backdrop-blur">
-              Map data &copy;{' '}
-              <a
-                href="https://www.openstreetmap.org/copyright"
-                target="_blank"
-                rel="noreferrer"
-                className="font-bold text-[#2d6b60] hover:underline"
-              >
-                OpenStreetMap
-              </a>{' '}
-              contributors · MapLibre GL
-            </div>
           </div>
         </>
       )}
@@ -931,6 +1536,15 @@ export function OsmMap({
           </div>
         </div>
       )}
+
+      {/* CesiumJS 3D Planetary Globe Modal View */}
+      <Cesium3DGlobe
+        isOpen={showCesiumModal}
+        onClose={() => setShowCesiumModal(false)}
+        pins={pins}
+        selectedPinId={selectedId}
+        onSelectPin={onSelectPin}
+      />
     </div>
   );
 }

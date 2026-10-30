@@ -18,6 +18,8 @@ import {
   Box,
   Building2,
   Eye,
+  Train,
+  Radio,
 } from 'lucide-react';
 import type { Pin, NearbyPin } from '@workspace/api-client-react';
 import { LocationTracker, type GpsLocationData, type TrackingStatus } from '@/lib/location-tracker';
@@ -29,6 +31,8 @@ import {
   INDIA_MAPS_URLS,
   getNearestKeyDistrict,
 } from '@/lib/india-maps-data';
+import type { ActiveRouteData } from '@/lib/routing-service';
+import { fetchRailRadarTrains, type RailRadarTrainStatus } from '@/lib/railradar-client';
 
 // Boisar, Maharashtra central coordinates: [lat, lng]
 export const BOISAR_CENTER: [number, number] = [19.8036, 72.7615];
@@ -52,6 +56,7 @@ export interface OsmMapProps {
   onMapReady?: (map: maplibregl.Map) => void;
   onTrackerReady?: (tracker: LocationTracker) => void;
   onGpsStatusChange?: (status: TrackingStatus, isFollowing: boolean, location: GpsLocationData | null) => void;
+  activeRoute?: ActiveRouteData | null;
 }
 
 export const TILE_LAYERS = {
@@ -563,12 +568,16 @@ export function OsmMap({
   onMapReady,
   onTrackerReady,
   onGpsStatusChange,
+  activeRoute,
 }: OsmMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const droppedMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const routeMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const trainMarkersRef = useRef<maplibregl.Marker[]>([]);
   const trackerRef = useRef<LocationTracker | null>(null);
+  const [isRailRadarActive, setIsRailRadarActive] = useState(false);
 
   const onMapClickRef = useRef(onMapClick);
   const onMapDoubleClickRef = useRef(onMapDoubleClick);
@@ -1085,6 +1094,279 @@ export function OsmMap({
     }
   }, [selectedId, pins]);
 
+  // Handle Calculated Directions Route on MapLibre Canvas
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const sourceId = 'mapveri-directions-route-source';
+    const casingLayerId = 'mapveri-directions-route-casing';
+    const mainLayerId = 'mapveri-directions-route-line';
+
+    // Clear old route markers
+    routeMarkersRef.current.forEach((m) => m.remove());
+    routeMarkersRef.current = [];
+
+    const clearRouteLayers = () => {
+      try {
+        if (map.getLayer(mainLayerId)) map.removeLayer(mainLayerId);
+        if (map.getLayer(casingLayerId)) map.removeLayer(casingLayerId);
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+      } catch {}
+    };
+
+    if (!activeRoute || !activeRoute.coordinates || activeRoute.coordinates.length < 2) {
+      clearRouteLayers();
+      return;
+    }
+
+    const geojsonData = {
+      type: 'Feature' as const,
+      properties: {},
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: activeRoute.coordinates,
+      },
+    };
+
+    const applyRoute = () => {
+      try {
+        const existingSource = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+        if (existingSource) {
+          existingSource.setData(geojsonData);
+        } else {
+          map.addSource(sourceId, {
+            type: 'geojson',
+            data: geojsonData,
+          });
+
+          // Route casing (dark outline)
+          map.addLayer({
+            id: casingLayerId,
+            type: 'line',
+            source: sourceId,
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round',
+            },
+            paint: {
+              'line-color': activeRoute.mode === 'foot' ? '#065f46' : '#1e40af',
+              'line-width': 8,
+              'line-opacity': 0.85,
+            },
+          });
+
+          // Route core line (vibrant Google Maps blue or emerald for walking)
+          map.addLayer({
+            id: mainLayerId,
+            type: 'line',
+            source: sourceId,
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round',
+            },
+            paint: {
+              'line-color': activeRoute.mode === 'foot' ? '#10b981' : '#3b82f6',
+              'line-width': 5,
+              'line-opacity': 1.0,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn('Error rendering route on map:', err);
+      }
+    };
+
+    if (map.isStyleLoaded()) {
+      applyRoute();
+    } else {
+      map.once('style.load', applyRoute);
+    }
+
+    // Add Start (A) Marker
+    const startCoord = activeRoute.sourceCoord || activeRoute.coordinates[0];
+    const destCoord = activeRoute.destCoord || activeRoute.coordinates[activeRoute.coordinates.length - 1];
+
+    if (startCoord) {
+      const elA = document.createElement('div');
+      elA.className = 'route-marker-start';
+      elA.style.cursor = 'pointer';
+      elA.innerHTML = `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+          <div style="
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #10b981;
+            border: 2.5px solid #ffffff;
+            box-shadow: 0 4px 12px rgba(16,185,129,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 13px;
+            color: #ffffff;
+          ">A</div>
+          <div style="
+            white-space: nowrap;
+            background: rgba(16, 185, 129, 0.95);
+            color: #ffffff;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 4px;
+            margin-top: 3px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            pointer-events: none;
+          ">${activeRoute.sourceName ? activeRoute.sourceName.slice(0, 18) : 'Start'}</div>
+        </div>
+      `;
+      const markerA = new maplibregl.Marker({ element: elA, anchor: 'center' })
+        .setLngLat(startCoord)
+        .addTo(map);
+      routeMarkersRef.current.push(markerA);
+    }
+
+    // Add Destination (B) Marker
+    if (destCoord) {
+      const elB = document.createElement('div');
+      elB.className = 'route-marker-dest';
+      elB.style.cursor = 'pointer';
+      elB.innerHTML = `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+          <div style="
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #ef4444;
+            border: 2.5px solid #ffffff;
+            box-shadow: 0 4px 12px rgba(239,68,68,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 13px;
+            color: #ffffff;
+          ">B</div>
+          <div style="
+            white-space: nowrap;
+            background: rgba(239, 68, 68, 0.95);
+            color: #ffffff;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 4px;
+            margin-top: 3px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            pointer-events: none;
+          ">${activeRoute.destName ? activeRoute.destName.slice(0, 18) : 'End'}</div>
+        </div>
+      `;
+      const markerB = new maplibregl.Marker({ element: elB, anchor: 'center' })
+        .setLngLat(destCoord)
+        .addTo(map);
+      routeMarkersRef.current.push(markerB);
+    }
+
+    // Fit map bounds to show complete route
+    try {
+      const bounds = new maplibregl.LngLatBounds();
+      activeRoute.coordinates.forEach((coord) => bounds.extend(coord));
+      map.fitBounds(bounds, {
+        padding: { top: 90, bottom: 320, left: 70, right: 70 },
+        maxZoom: 16.5,
+        duration: 900,
+      });
+    } catch {}
+
+    return () => {
+      routeMarkersRef.current.forEach((m) => m.remove());
+      routeMarkersRef.current = [];
+    };
+  }, [activeRoute]);
+
+  // Handle RailRadar Live Corridor Trains on MapLibre Canvas
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    trainMarkersRef.current.forEach((m) => m.remove());
+    trainMarkersRef.current = [];
+
+    if (!isRailRadarActive) return;
+
+    let isMounted = true;
+
+    const updateTrains = async () => {
+      try {
+        const trains = await fetchRailRadarTrains();
+        if (!isMounted || !mapRef.current) return;
+
+        trainMarkersRef.current.forEach((m) => m.remove());
+        trainMarkersRef.current = [];
+
+        trains.forEach((train) => {
+          if (train.lat === undefined || train.lng === undefined) return;
+
+          const isDelayed = train.status === 'delayed';
+          const el = document.createElement('div');
+          el.className = 'railradar-train-marker';
+          el.style.cursor = 'pointer';
+          el.innerHTML = `
+            <div style="position: relative; display: flex; align-items: center; gap: 5px; background: rgba(15, 32, 28, 0.95); color: #fff; padding: 3px 8px; border-radius: 20px; border: 2px solid ${isDelayed ? '#f59e0b' : '#10b981'}; box-shadow: 0 4px 14px rgba(0,0,0,0.4); font-family: sans-serif; transition: transform 0.2s;">
+              <span style="font-size: 13px;">🚆</span>
+              <div style="display: flex; flex-direction: column;">
+                <span style="font-weight: 800; font-size: 10px; line-height: 1;">#${train.trainNumber}</span>
+                <span style="font-size: 8px; color: ${isDelayed ? '#fbbf24' : '#6ee7b7'}; font-weight: 700;">${train.speedKmph || 0} km/h</span>
+              </div>
+            </div>
+          `;
+
+          const popup = new maplibregl.Popup({ offset: 16, closeButton: false }).setHTML(`
+            <div style="font-family: inherit; font-size: 12px; padding: 4px; min-width: 170px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
+                <strong style="color: #205b51;">#${train.trainNumber}</strong>
+                <span style="font-size: 9px; font-weight: bold; padding: 1px 4px; border-radius: 4px; background: ${isDelayed ? '#fef3c7' : '#d1fae5'}; color: ${isDelayed ? '#92400e' : '#065f46'};">
+                  ${isDelayed ? `Delayed ${train.delayMinutes}m` : 'On Time'}
+                </span>
+              </div>
+              <div style="font-weight: 700; color: #172a3a; font-size: 11px;">${train.trainName}</div>
+              <div style="font-size: 10px; color: #556962; margin-top: 3px;">${train.route}</div>
+              <div style="font-size: 10px; color: #172a3a; margin-top: 3px;">
+                Current: <strong>${train.currentStation}</strong>
+              </div>
+              <div style="font-size: 9px; color: #71857e; margin-top: 4px; border-top: 1px solid #e5e7eb; padding-top: 3px;">
+                Verified Telemetry &bull; RailRadar
+              </div>
+            </div>
+          `);
+
+          const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat([train.lng, train.lat])
+            .setPopup(popup)
+            .addTo(mapRef.current!);
+
+          el.addEventListener('mouseenter', () => marker.togglePopup());
+          el.addEventListener('mouseleave', () => marker.togglePopup());
+
+          trainMarkersRef.current.push(marker);
+        });
+      } catch (err) {
+        console.warn('Error rendering live RailRadar trains on map:', err);
+      }
+    };
+
+    updateTrains();
+    const interval = setInterval(updateTrains, 12000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      trainMarkersRef.current.forEach((m) => m.remove());
+      trainMarkersRef.current = [];
+    };
+  }, [isRailRadarActive]);
+
   const handleZoomIn = () => mapRef.current?.zoomIn();
   const handleZoomOut = () => mapRef.current?.zoomOut();
 
@@ -1345,6 +1627,30 @@ export function OsmMap({
                 <LocateOff size={17} />
               ) : (
                 <Locate size={17} />
+              )}
+            </button>
+
+            {/* RailRadar Live Telemetry Toggle */}
+            <button
+              onClick={() => setIsRailRadarActive(!isRailRadarActive)}
+              className={`relative flex h-9 w-9 items-center justify-center rounded-lg border shadow-md transition ${
+                isRailRadarActive
+                  ? 'border-emerald-500 bg-[#205b51] text-white shadow-[0_0_14px_rgba(32,91,81,0.45)]'
+                  : 'border-[#c4d0c6] bg-[#fffdf4] text-[#243f48] hover:bg-[#f2efe4]'
+              }`}
+              title={
+                isRailRadarActive
+                  ? 'RailRadar Live: Active (Click to hide trains)'
+                  : 'RailRadar Live: Track active corridor trains'
+              }
+              aria-label="Toggle RailRadar Live Trains"
+            >
+              <Train size={18} />
+              {isRailRadarActive && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border border-white"></span>
+                </span>
               )}
             </button>
 

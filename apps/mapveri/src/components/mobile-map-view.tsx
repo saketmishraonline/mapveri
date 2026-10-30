@@ -69,6 +69,9 @@ import { type LocationTracker, type TrackingStatus, type GpsLocationData } from 
 import { useToast } from '@/hooks/use-toast';
 import { CategoryCombobox } from '@/components/category-combobox';
 import { Cesium3DGlobe } from './cesium-3d-globe';
+import { DirectionsPanel } from './directions-panel';
+import type { ActiveRouteData } from '@/lib/routing-service';
+import { RailRadarStationBoard } from './railradar-panel';
 
 interface MobileMapViewProps {
   onSwitchToDesktop?: () => void;
@@ -107,6 +110,9 @@ export function MobileMapView({ onSwitchToDesktop }: MobileMapViewProps) {
   const [gpsStatus, setGpsStatus] = useState<TrackingStatus>('idle');
   const [gpsFollowing, setGpsFollowing] = useState(false);
   const [gpsLocation, setGpsLocation] = useState<GpsLocationData | null>(null);
+  const [activeRoute, setActiveRoute] = useState<ActiveRouteData | null>(null);
+  const [isPickingOnMap, setIsPickingOnMap] = useState<'source' | 'destination' | null>(null);
+  const [pickedCoord, setPickedCoord] = useState<{ lat: number; lng: number } | null>(null);
 
   // Queries
   const pinQuery = useListPins(
@@ -164,9 +170,15 @@ export function MobileMapView({ onSwitchToDesktop }: MobileMapViewProps) {
   };
 
   const handleMapClick = (lat: number, lng: number) => {
+    if (isPickingOnMap) {
+      setPickedCoord({ lat, lng });
+      setIsPickingOnMap(null);
+      return;
+    }
     if (selectedId) {
       setSelectedId(null);
       setSheetMode('peek');
+      setActiveRoute(null);
       return;
     }
     setCreateCoords({ lat: lat.toFixed(6), lng: lng.toFixed(6) });
@@ -397,6 +409,7 @@ export function MobileMapView({ onSwitchToDesktop }: MobileMapViewProps) {
             setGpsFollowing(following);
             setGpsLocation(loc);
           }}
+          activeRoute={activeRoute}
         />
 
         {/* Live GPS Tracking Status Badge on Mobile */}
@@ -508,13 +521,17 @@ export function MobileMapView({ onSwitchToDesktop }: MobileMapViewProps) {
         /* MODE C: Pin Details Bottom Sheet */
         <MobilePinDetailSheet
           pinId={selectedId}
+          pins={filteredPins}
+          gpsLocation={gpsLocation}
           onClose={() => {
             setSelectedId(null);
             setSheetMode('peek');
+            setActiveRoute(null);
           }}
-          onDirections={(lat, lng) => {
-            window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
-          }}
+          onRouteCalculated={setActiveRoute}
+          onPickOnMap={(target) => setIsPickingOnMap(target)}
+          pickedCoord={pickedCoord}
+          isPickingOnMap={isPickingOnMap}
         />
       ) : (
         /* MODE A / B: Explore Places Sheet (Peek Carousel / Expanded List) */
@@ -870,18 +887,30 @@ function MobileExploreSheet({
  */
 function MobilePinDetailSheet({
   pinId,
+  pins,
+  gpsLocation,
   onClose,
-  onDirections,
+  onRouteCalculated,
+  onPickOnMap,
+  pickedCoord,
+  isPickingOnMap,
 }: {
   pinId: number;
+  pins: (Pin | NearbyPin)[];
+  gpsLocation: GpsLocationData | null;
   onClose: () => void;
-  onDirections: (lat: number, lng: number) => void;
+  onRouteCalculated: (route: ActiveRouteData | null) => void;
+  onPickOnMap?: (target: 'source' | 'destination') => void;
+  pickedCoord?: { lat: number; lng: number } | null;
+  isPickingOnMap?: 'source' | 'destination' | null;
 }) {
   const queryClient = useQueryClient();
   const detail = useGetPin(pinId, { query: { enabled: true, queryKey: getGetPinQueryKey(pinId) } });
   const verify = useVerifyPin();
   const { toast } = useToast();
   const pin = detail.data;
+  const [isDirectionsMode, setIsDirectionsMode] = useState(false);
+  const [isRailRadarMode, setIsRailRadarMode] = useState(false);
 
   const handleVerify = (vote: 'confirm' | 'dispute') => {
     verify.mutate(
@@ -921,6 +950,69 @@ function MobilePinDetailSheet({
       handleCopyCoords();
     }
   };
+
+  // If RailRadar mode is active, render RailRadarStationBoard in bottom sheet
+  if (isRailRadarMode && pin) {
+    return (
+      <div
+        className="fixed inset-x-0 bottom-14 z-40 max-h-[85dvh] h-[540px] flex flex-col rounded-t-3xl border-t border-[#d0ded0] bg-[#fffdf9] shadow-[0_-12px_32px_rgba(23,42,58,0.22)] animate-in slide-in-from-bottom duration-250"
+        data-testid="panel-pin-railradar-mobile"
+      >
+        <div className="flex items-center justify-between border-b border-[#e5ebe4] px-4 py-2">
+          <span className="h-1.5 w-12 rounded-full bg-[#cbd5cb] mx-auto" />
+          <button
+            onClick={() => setIsRailRadarMode(false)}
+            className="absolute right-3 top-2 grid h-8 w-8 place-items-center rounded-full text-[#708079] hover:bg-[#edece4] active:scale-95"
+            aria-label="Exit RailRadar"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-hidden">
+          <RailRadarStationBoard stationName={pin.name} />
+        </div>
+      </div>
+    );
+  }
+
+  // If Directions mode is active, render DirectionsPanel in that bottom sheet only
+  if (isDirectionsMode && pin) {
+    return (
+      <div
+        className="fixed inset-x-0 bottom-14 z-40 max-h-[85dvh] h-[520px] flex flex-col rounded-t-3xl border-t border-[#d0ded0] bg-[#fffdf9] shadow-[0_-12px_32px_rgba(23,42,58,0.22)] animate-in slide-in-from-bottom duration-250"
+        data-testid="panel-pin-directions"
+      >
+        <div className="flex items-center justify-between border-b border-[#e5ebe4] px-4 py-2">
+          <span className="h-1.5 w-12 rounded-full bg-[#cbd5cb] mx-auto" />
+          <button
+            onClick={() => {
+              setIsDirectionsMode(false);
+              onRouteCalculated(null);
+            }}
+            className="absolute right-3 top-2 grid h-8 w-8 place-items-center rounded-full text-[#708079] hover:bg-[#edece4] active:scale-95"
+            aria-label="Exit directions"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <DirectionsPanel
+          destinationPin={pin}
+          currentGpsLocation={gpsLocation ? { latitude: gpsLocation.latitude, longitude: gpsLocation.longitude } : null}
+          pins={pins}
+          onRouteCalculated={onRouteCalculated}
+          onClose={() => {
+            setIsDirectionsMode(false);
+            onRouteCalculated(null);
+          }}
+          onPickOnMap={onPickOnMap}
+          pickedCoord={pickedCoord}
+          isPickingOnMap={isPickingOnMap}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -985,8 +1077,9 @@ function MobilePinDetailSheet({
           {/* GOOGLE MAPS ACTION BUTTONS ROW */}
           <div className="grid grid-cols-3 gap-2 border-y border-[#e5ebe4] py-3">
             <button
-              onClick={() => onDirections(pin.lat, pin.lng)}
+              onClick={() => setIsDirectionsMode(true)}
               className="flex flex-col items-center gap-1 rounded-xl bg-[#e7f0ea] py-2 text-xs font-bold text-[#205b51] active:scale-95 transition"
+              data-testid="button-directions-mobile"
             >
               <Navigation size={18} />
               <span>Directions</span>
@@ -1008,6 +1101,32 @@ function MobilePinDetailSheet({
               <span>Close</span>
             </button>
           </div>
+
+          {/* RailRadar Live Departures Banner for Railway Stations */}
+          {pin.category === 'Railway Station' && (
+            <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-[#173830] to-[#205b51] p-3 text-white shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <Train size={20} className="text-emerald-300 shrink-0" />
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-bold">RailRadar Live Departures</p>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-emerald-100/80">Platform track timings, verified delays & corridor telemetry</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsRailRadarMode(true)}
+                className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-bold text-[#173830] hover:bg-emerald-300 active:scale-95 transition shrink-0 ml-2"
+                data-testid="button-open-railradar-mobile"
+              >
+                Live Board
+              </button>
+            </div>
+          )}
 
           {/* Description */}
           <div className="rounded-xl bg-[#f8f6ed] p-3.5 border border-[#e2e8df]">

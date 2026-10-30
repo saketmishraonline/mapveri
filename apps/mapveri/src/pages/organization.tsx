@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Link, useLocation } from 'wouter';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { getMapLibreStyle, TILE_LAYERS, type TileLayerKey } from '@/components/osm-map';
 import {
   Truck,
   Navigation,
@@ -346,36 +347,92 @@ function FleetRadarView({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<{ [key: string]: maplibregl.Marker }>({});
+  const [activeLayer, setActiveLayer] = useState<TileLayerKey>('mapveri');
+  const [showLayerMenu, setShowLayerMenu] = useState(false);
+  const [hoveredDistrict, setHoveredDistrict] = useState<{ district: string; st_nm: string; dt_code: string } | null>(null);
+  const [isMapReady, setIsMapReady] = useState(false);
 
-  // Initialize MapLibre
+  // Safe route corridor rendering - protects against 'Style is not done loading'
+  const renderRoute = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !selectedTruck) return;
+
+    // Check if style is loaded before adding/modifying sources or layers
+    if (!map.isStyleLoaded()) {
+      return;
+    }
+
+    try {
+      const routeSourceId = 'active-truck-route';
+      const routeCoords = [
+        [selectedTruck.route.originLng, selectedTruck.route.originLat],
+        ...selectedTruck.route.waypoints.map((w) => [w.lng, w.lat]),
+        [selectedTruck.lng, selectedTruck.lat],
+        [selectedTruck.route.destLng, selectedTruck.route.destLat],
+      ];
+
+      const geojsonData = {
+        type: 'Feature' as const,
+        properties: {},
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: routeCoords,
+        },
+      };
+
+      const existingSource = map.getSource(routeSourceId) as maplibregl.GeoJSONSource | undefined;
+      if (existingSource && typeof existingSource.setData === 'function') {
+        existingSource.setData(geojsonData);
+      } else {
+        if (map.getLayer('truck-route-line')) map.removeLayer('truck-route-line');
+        if (map.getLayer('truck-route-line-casing')) map.removeLayer('truck-route-line-casing');
+        if (map.getSource(routeSourceId)) map.removeSource(routeSourceId);
+
+        map.addSource(routeSourceId, {
+          type: 'geojson',
+          data: geojsonData,
+        });
+
+        if (!map.getLayer('truck-route-line-casing')) {
+          map.addLayer({
+            id: 'truck-route-line-casing',
+            type: 'line',
+            source: routeSourceId,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': '#172a3a',
+              'line-width': 6,
+              'line-opacity': 0.75,
+            },
+          });
+        }
+
+        if (!map.getLayer('truck-route-line')) {
+          map.addLayer({
+            id: 'truck-route-line',
+            type: 'line',
+            source: routeSourceId,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': '#f1c744',
+              'line-width': 3.5,
+              'line-dasharray': [2, 1],
+            },
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Safe catch: Route render prevented style race error:', err);
+    }
+  }, [selectedTruck]);
+
+  // Initialize MapLibre with the user-designed Mapveri Map style
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: {
-        version: 8,
-        sources: {
-          'carto-voyager': {
-            type: 'raster',
-            tiles: [
-              'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-              'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-            ],
-            tileSize: 256,
-            attribution: '&copy; OpenStreetMap, &copy; CARTO',
-          },
-        },
-        layers: [
-          {
-            id: 'carto-base',
-            type: 'raster',
-            source: 'carto-voyager',
-            minzoom: 0,
-            maxzoom: 19,
-          },
-        ],
-      },
+      style: getMapLibreStyle('mapveri'),
       center: selectedTruck ? [selectedTruck.lng, selectedTruck.lat] : [72.85, 19.35],
       zoom: 9.8,
     });
@@ -383,11 +440,84 @@ function FleetRadarView({
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
     mapRef.current = map;
 
+    const handleLoad = () => {
+      setIsMapReady(true);
+      try {
+        map.resize();
+      } catch { }
+      renderRoute();
+    };
+
+    const handleStyleLoad = () => {
+      renderRoute();
+    };
+
+    map.on('load', handleLoad);
+    map.on('style.load', handleStyleLoad);
+
+    // India Maps Data 760 districts hover listener
+    const handleMouseMove = (e: maplibregl.MapMouseEvent) => {
+      try {
+        if (!map.isStyleLoaded() || !map.getLayer('mapveri-india-district-fill')) {
+          map.getCanvas().style.cursor = '';
+          return;
+        }
+        const features = map.queryRenderedFeatures(e.point, { layers: ['mapveri-india-district-fill'] });
+        if (features && features.length > 0) {
+          map.getCanvas().style.cursor = 'pointer';
+          const props = features[0].properties as any;
+          if (props?.district) {
+            setHoveredDistrict({
+              district: props.district,
+              st_nm: props.st_nm || 'India',
+              dt_code: props.dt_code || '',
+            });
+          }
+        } else {
+          map.getCanvas().style.cursor = '';
+          setHoveredDistrict(null);
+        }
+      } catch {
+        map.getCanvas().style.cursor = '';
+      }
+    };
+
+    const handleMouseOut = () => {
+      map.getCanvas().style.cursor = '';
+      setHoveredDistrict(null);
+    };
+
+    map.on('mousemove', handleMouseMove);
+    map.on('mouseout', handleMouseOut);
+
+    const resizeTimer = setTimeout(() => {
+      try {
+        map.resize();
+      } catch { }
+    }, 250);
+
     return () => {
+      clearTimeout(resizeTimer);
+      map.off('load', handleLoad);
+      map.off('style.load', handleStyleLoad);
+      map.off('mousemove', handleMouseMove);
+      map.off('mouseout', handleMouseOut);
       map.remove();
       mapRef.current = null;
+      setIsMapReady(false);
     };
   }, []);
+
+  // Handle layer style change dynamically
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    try {
+      map.setStyle(getMapLibreStyle(activeLayer));
+    } catch (err) {
+      console.warn('Set style error:', err);
+    }
+  }, [activeLayer]);
 
   // Sync Markers on Map
   useEffect(() => {
@@ -455,68 +585,40 @@ function FleetRadarView({
     });
   }, [allTrucks, selectedTruck, onSelectTruck]);
 
-  // Fly to selected truck and render route corridor
+  // Fly to selected truck and safely render route corridor
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !selectedTruck) return;
 
-    map.flyTo({
-      center: [selectedTruck.lng, selectedTruck.lat],
-      zoom: 11.5,
-      speed: 1.2,
-      curve: 1.4,
-    });
+    try {
+      map.flyTo({
+        center: [selectedTruck.lng, selectedTruck.lat],
+        zoom: 11.5,
+        speed: 1.2,
+        curve: 1.4,
+      });
+    } catch { }
 
-    const routeSourceId = 'active-truck-route';
-    const routeCoords = [
-      [selectedTruck.route.originLng, selectedTruck.route.originLat],
-      ...selectedTruck.route.waypoints.map((w) => [w.lng, w.lat]),
-      [selectedTruck.lng, selectedTruck.lat],
-      [selectedTruck.route.destLng, selectedTruck.route.destLat],
-    ];
-
-    const geojsonData: GeoJSON.Feature<GeoJSON.LineString> = {
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'LineString',
-        coordinates: routeCoords,
-      },
-    };
-
-    if (map.getSource(routeSourceId)) {
-      (map.getSource(routeSourceId) as maplibregl.GeoJSONSource).setData(geojsonData);
+    if (map.isStyleLoaded()) {
+      renderRoute();
     } else {
-      map.addSource(routeSourceId, {
-        type: 'geojson',
-        data: geojsonData,
-      });
-
-      map.addLayer({
-        id: 'truck-route-line-casing',
-        type: 'line',
-        source: routeSourceId,
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': '#172a3a',
-          'line-width': 6,
-          'line-opacity': 0.7,
-        },
-      });
-
-      map.addLayer({
-        id: 'truck-route-line',
-        type: 'line',
-        source: routeSourceId,
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': '#f1c744',
-          'line-width': 3.5,
-          'line-dasharray': [2, 1],
-        },
-      });
+      map.once('load', renderRoute);
+      map.once('style.load', renderRoute);
     }
-  }, [selectedTruck]);
+  }, [selectedTruck, isMapReady, renderRoute]);
+
+  const handleFitCorridor = () => {
+    const map = mapRef.current;
+    if (!map || !selectedTruck) return;
+    try {
+      const bounds = new maplibregl.LngLatBounds();
+      bounds.extend([selectedTruck.route.originLng, selectedTruck.route.originLat]);
+      bounds.extend([selectedTruck.route.destLng, selectedTruck.route.destLat]);
+      bounds.extend([selectedTruck.lng, selectedTruck.lat]);
+      selectedTruck.route.waypoints.forEach((w) => bounds.extend([w.lng, w.lat]));
+      map.fitBounds(bounds, { padding: 60, maxZoom: 13, duration: 1000 });
+    } catch { }
+  };
 
   const statusCounts = useMemo(() => {
     return {
@@ -640,6 +742,85 @@ function FleetRadarView({
 
       {/* Right Column: Map & Telematics Drawer */}
       <div className="relative flex flex-col rounded-xl border border-[#d6ded4] bg-[#f8f5ea] shadow-2xs overflow-hidden h-full min-h-[500px]">
+        {/* Floating Top Overlays */}
+        <div className="absolute top-2.5 left-2.5 z-20 flex flex-wrap items-center gap-2 pointer-events-auto">
+          {/* Layer Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowLayerMenu((prev) => !prev)}
+              className="flex items-center gap-1.5 rounded-lg border border-[#c4d0c6] bg-[#fffdf4]/95 px-2.5 py-1.5 text-xs font-bold text-[#172a3a] shadow-sm backdrop-blur hover:bg-[#fff]"
+              title="Select map style"
+            >
+              <Layers size={14} className="text-[#2d6b60]" />
+              <span>{TILE_LAYERS[activeLayer]?.shortName || 'Mapveri Map'}</span>
+              {activeLayer === 'mapveri' && (
+                <span className="rounded bg-[#f1c744]/40 px-1 py-0.2 text-[9px] font-bold text-[#806414] border border-[#f1c744]/60">
+                  MAPVERI
+                </span>
+              )}
+            </button>
+
+            {showLayerMenu && (
+              <div className="absolute left-0 top-full mt-1.5 w-72 rounded-xl border border-[#d6ded4] bg-[#fffdf9] p-1.5 shadow-xl backdrop-blur-md z-30">
+                <div className="px-2 py-1 text-[10px] font-mono-map uppercase tracking-wider text-[#708079]">
+                  Select Map Style
+                </div>
+                {(Object.keys(TILE_LAYERS) as TileLayerKey[]).map((key) => {
+                  const info = TILE_LAYERS[key];
+                  const isSelected = activeLayer === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        setActiveLayer(key);
+                        setShowLayerMenu(false);
+                      }}
+                      className={`w-full rounded-lg px-2.5 py-2 text-left text-xs transition flex flex-col gap-0.5 ${
+                        isSelected
+                          ? 'bg-[#2d6b60] text-white'
+                          : 'text-[#172a3a] hover:bg-[#f0ece0]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold">{info.name}</span>
+                        {key === 'mapveri' && (
+                          <span className={`text-[9px] px-1 rounded font-bold ${isSelected ? 'bg-white/20 text-[#f1c744]' : 'bg-[#f1c744]/20 text-[#806414]'}`}>
+                            Custom Design
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-[10px] leading-tight ${isSelected ? 'text-white/80' : 'text-[#708079]'}`}>
+                        {info.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* District Hover Badge */}
+          {hoveredDistrict && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-[#3b82f6]/40 bg-[#eff6ff]/95 px-2.5 py-1.5 text-xs font-semibold text-[#1d4ed8] shadow-sm backdrop-blur animate-in fade-in">
+              <span>🇮🇳</span>
+              <span>{hoveredDistrict.district} District</span>
+              <span className="text-[10px] opacity-75 font-normal">({hoveredDistrict.st_nm})</span>
+            </div>
+          )}
+
+          {/* Fit Corridor Button */}
+          {selectedTruck && (
+            <button
+              onClick={handleFitCorridor}
+              className="flex items-center gap-1.5 rounded-lg border border-[#c4d0c6] bg-[#fffdf4]/95 px-2.5 py-1.5 text-xs font-semibold text-[#2d6b60] shadow-sm backdrop-blur hover:bg-[#fff]"
+              title="Fit entire corridor into map view"
+            >
+              <Maximize2 size={13} />
+              <span className="hidden sm:inline">Fit Route Corridor</span>
+            </button>
+          )}
+        </div>
+
         {/* Map Canvas */}
         <div ref={mapContainerRef} className="h-full w-full flex-1" />
 

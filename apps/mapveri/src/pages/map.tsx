@@ -20,6 +20,7 @@ import {
   ChevronUp,
   ChevronDown,
   ExternalLink,
+  Train,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
@@ -54,6 +55,9 @@ import { OsmMap, BOISAR_CENTER, THEEM_COLLEGE } from '@/components/osm-map';
 import { CategoryCombobox } from '@/components/category-combobox';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { MobileMapView } from '@/components/mobile-map-view';
+import { DirectionsPanel } from '@/components/directions-panel';
+import type { ActiveRouteData } from '@/lib/routing-service';
+import { RailRadarStationBoard } from '@/components/railradar-panel';
 
 function CreatePinPanel({
   initialLat = '19.8055',
@@ -256,15 +260,32 @@ function CreatePinPanel({
   );
 }
 
-function BottomPlaceWindow({ pinId, onClose }: { pinId: number; onClose: () => void }) {
+function BottomPlaceWindow({
+  pinId,
+  pins,
+  onClose,
+  onRouteCalculated,
+  onPickOnMap,
+  pickedCoord,
+  isPickingOnMap,
+}: {
+  pinId: number;
+  pins: (Pin | NearbyPin)[];
+  onClose: () => void;
+  onRouteCalculated: (route: ActiveRouteData | null) => void;
+  onPickOnMap?: (target: 'source' | 'destination') => void;
+  pickedCoord?: { lat: number; lng: number } | null;
+  isPickingOnMap?: 'source' | 'destination' | null;
+}) {
   const queryClient = useQueryClient();
   const detail = useGetPin(pinId, { query: { enabled: true, queryKey: getGetPinQueryKey(pinId) } });
   const verify = useVerifyPin();
   const { toast } = useToast();
   const pin = detail.data;
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'verifications' | 'activity' | 'coordinates' | 'photos'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'verifications' | 'activity' | 'coordinates' | 'photos' | 'railradar'>('overview');
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isDirectionsMode, setIsDirectionsMode] = useState(false);
 
   const cast = (vote: 'confirm' | 'dispute') =>
     verify.mutate(
@@ -292,9 +313,8 @@ function BottomPlaceWindow({ pinId, onClose }: { pinId: number; onClose: () => v
   };
 
   const handleDirections = () => {
-    if (pin) {
-      window.open(`https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`, '_blank');
-    }
+    setIsDirectionsMode(true);
+    setIsExpanded(true);
   };
 
   const handleShare = () => {
@@ -309,6 +329,39 @@ function BottomPlaceWindow({ pinId, onClose }: { pinId: number; onClose: () => v
       handleCopyCoords();
     }
   };
+
+  // If in Directions Mode, render the Google Maps-style Directions panel in that window only
+  if (isDirectionsMode && pin) {
+    return (
+      <div
+        className={`absolute inset-x-0 bottom-0 z-30 flex flex-col rounded-t-3xl border-t border-[#c5d0c6] bg-[#fffdf9]/98 shadow-[0_-12px_36px_rgba(23,42,58,0.2)] backdrop-blur-md transition-all duration-300 animate-in slide-in-from-bottom ${
+          isExpanded ? 'h-[82%]' : 'h-[460px]'
+        }`}
+        data-testid="bottom-place-window-directions"
+      >
+        {/* Top Drag Handle */}
+        <div
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex cursor-pointer flex-col items-center pt-2 pb-1 hover:opacity-80 transition"
+        >
+          <span className="h-1.5 w-12 rounded-full bg-[#c9d4ca]" />
+        </div>
+
+        <DirectionsPanel
+          destinationPin={pin}
+          pins={pins}
+          onRouteCalculated={onRouteCalculated}
+          onClose={() => {
+            setIsDirectionsMode(false);
+            onRouteCalculated(null);
+          }}
+          onPickOnMap={onPickOnMap}
+          pickedCoord={pickedCoord}
+          isPickingOnMap={isPickingOnMap}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -426,12 +479,49 @@ function BottomPlaceWindow({ pinId, onClose }: { pinId: number; onClose: () => v
               <Camera size={14} />
               <span>Photos</span>
             </button>
+            {pin.category === 'Railway Station' && (
+              <button
+                onClick={() => setActiveTab('railradar')}
+                className={`flex items-center gap-1.5 px-3 py-2 font-bold transition border-b-2 ${
+                  activeTab === 'railradar'
+                    ? 'border-[#2d6b60] text-[#2d6b60]'
+                    : 'border-transparent text-[#60716d] hover:text-[#172a3a]'
+                }`}
+              >
+                <Train size={14} className="text-[#205b51]" />
+                <span>RailRadar Live</span>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              </button>
+            )}
           </nav>
 
           {/* Window Tab Content */}
           <div className="flex-1 overflow-y-auto px-5 py-4">
             {activeTab === 'overview' && (
               <div className="space-y-4">
+                {pin.category === 'Railway Station' && (
+                  <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-[#173830] to-[#205b51] p-3 text-white shadow-xs">
+                    <div className="flex items-center gap-2.5">
+                      <Train size={20} className="text-emerald-300" />
+                      <div>
+                        <p className="text-xs font-bold">RailRadar Live Departures</p>
+                        <p className="text-[10px] text-emerald-100/80">Platform track timings, verified delays & corridor telemetry</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setActiveTab('railradar');
+                        setIsExpanded(true);
+                      }}
+                      className="rounded-lg bg-emerald-400 px-3 py-1 text-xs font-bold text-[#173830] hover:bg-emerald-300 transition shrink-0"
+                    >
+                      View Board &rarr;
+                    </button>
+                  </div>
+                )}
                 <p className="text-sm leading-6 text-[#40544f]">
                   {pin.description || 'No description provided yet.'}
                 </p>
@@ -637,6 +727,12 @@ function BottomPlaceWindow({ pinId, onClose }: { pinId: number; onClose: () => v
                 </button>
               </div>
             )}
+
+            {activeTab === 'railradar' && (
+              <div className="h-full -mx-5 -my-4 min-h-[350px]">
+                <RailRadarStationBoard stationName={pin.name} />
+              </div>
+            )}
           </div>
         </>
       )}
@@ -654,6 +750,9 @@ function DesktopMapView({ onSwitchToMobile }: { onSwitchToMobile?: () => void } 
     lat: '19.8055',
     lng: '72.7668',
   });
+  const [activeRoute, setActiveRoute] = useState<ActiveRouteData | null>(null);
+  const [isPickingOnMap, setIsPickingOnMap] = useState<'source' | 'destination' | null>(null);
+  const [pickedCoord, setPickedCoord] = useState<{ lat: number; lng: number } | null>(null);
 
   const pinQuery = useListPins(
     { status: status as 'all' | 'unverified' | 'community_verified' | 'admin_verified' | 'rejected' },
@@ -677,8 +776,13 @@ function DesktopMapView({ onSwitchToMobile }: { onSwitchToMobile?: () => void } 
     [pins, search]
   );
 
-  // Single click: put a red pin and show its coordinates
+  // Single click: handle map pick for directions OR put a red pin
   const handleMapClick = (lat: number, lng: number) => {
+    if (isPickingOnMap) {
+      setPickedCoord({ lat, lng });
+      setIsPickingOnMap(null);
+      return;
+    }
     setSelectedId(null);
     setDroppedPin({ lat, lng });
     setCreateCoords({ lat: lat.toString(), lng: lng.toString() });
@@ -785,12 +889,21 @@ function DesktopMapView({ onSwitchToMobile }: { onSwitchToMobile?: () => void } 
             onAddPlaceAtCoords={handleAddPlaceAtCoords}
             hideQuickJumps={true}
             dimOverlays={showCreate}
+            activeRoute={activeRoute}
           />
 
           {selectedId && (
             <BottomPlaceWindow
               pinId={selectedId}
-              onClose={() => setSelectedId(null)}
+              pins={filteredPins}
+              onClose={() => {
+                setSelectedId(null);
+                setActiveRoute(null);
+              }}
+              onRouteCalculated={setActiveRoute}
+              onPickOnMap={(target) => setIsPickingOnMap(target)}
+              pickedCoord={pickedCoord}
+              isPickingOnMap={isPickingOnMap}
             />
           )}
         </section>
